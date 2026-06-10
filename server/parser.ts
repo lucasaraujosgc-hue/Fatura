@@ -6,55 +6,16 @@ import fs from "fs";
 export async function parseInvoicePDF(filePath: string, invoiceMonth: string) {
   const dataBuffer = fs.readFileSync(filePath);
   
-  // Diagnostic tracing for pdf-parse module resolution
-  const diagnostics: string[] = [];
-  diagnostics.push(`Type of top-level import pdfParse: ${typeof pdfParse}`);
-  if (pdfParse) {
-    diagnostics.push(`Keys of pdfParse: ${Object.keys(pdfParse).join(", ")}`);
-    diagnostics.push(`Type of pdfParse.default: ${typeof (pdfParse as any).default}`);
-  }
-  
-  let reqPdf: any = null;
-  try {
-    // @ts-ignore
-    reqPdf = typeof require !== 'undefined' ? require("pdf-parse") : null;
-    diagnostics.push(`Type of require('pdf-parse'): ${typeof reqPdf}`);
-    if (reqPdf) {
-      diagnostics.push(`Keys of require('pdf-parse'): ${Object.keys(reqPdf).join(", ")}`);
-      diagnostics.push(`Type of require('pdf-parse').default: ${typeof reqPdf.default}`);
-    }
-  } catch (err: any) {
-    diagnostics.push(`require('pdf-parse') threw: ${err.message}`);
+  // Extract text using PDFParse class from mehmet-kozan's pdf-parse package
+  const pdfParserClass = (pdfParse as any).PDFParse;
+  if (!pdfParserClass) {
+    throw new Error(`Não foi possível encontrar a classe PDFParse. Chaves disponíveis: ${Object.keys(pdfParse).join(", ")}`);
   }
 
-  let dynPdf: any = null;
-  try {
-    dynPdf = await import("pdf-parse");
-    diagnostics.push(`Type of import('pdf-parse'): ${typeof dynPdf}`);
-    if (dynPdf) {
-      diagnostics.push(`Keys of import('pdf-parse'): ${Object.keys(dynPdf).join(", ")}`);
-      diagnostics.push(`Type of import('pdf-parse').default: ${typeof dynPdf.default}`);
-    }
-  } catch (err: any) {
-    diagnostics.push(`import('pdf-parse') threw: ${err.message}`);
-  }
-
-  // Search logic for the actual function
-  let pdfParserFn: any = null;
-  if (typeof pdfParse === "function") pdfParserFn = pdfParse;
-  else if (pdfParse && typeof (pdfParse as any).default === "function") pdfParserFn = (pdfParse as any).default;
-  else if (reqPdf && typeof reqPdf === "function") pdfParserFn = reqPdf;
-  else if (reqPdf && typeof reqPdf.default === "function") pdfParserFn = reqPdf.default;
-  else if (dynPdf && typeof dynPdf === "function") pdfParserFn = dynPdf;
-  else if (dynPdf && typeof dynPdf.default === "function") pdfParserFn = dynPdf.default;
-  else if (dynPdf && dynPdf.default && typeof (dynPdf as any).default.default === "function") pdfParserFn = (dynPdf as any).default.default;
-
-  if (typeof pdfParserFn !== "function") {
-    throw new Error(`[ERRO_PDF_RESOLVE] Diagnósticos de carregamento: ${diagnostics.join(" | ")}`);
-  }
-
-  const data = await pdfParserFn(dataBuffer);
-  const text = data.text;
+  const parserInstance = new pdfParserClass({ data: dataBuffer });
+  const textResult = await parserInstance.getText();
+  const text = textResult.text;
+  await parserInstance.destroy();
 
   // If we don't have an API key, we throw an error (or fallback to dummy logic if we wanted)
   if (!process.env.GEMINI_API_KEY) {
