@@ -21,6 +21,8 @@ export function Dashboard({
   const [targetPersonId, setTargetPersonId] = useState<string>("");
   const [targetCategoryId, setTargetCategoryId] = useState<string>("");
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("all");
+  const [selectedPersonFilter, setSelectedPersonFilter] = useState<string>("all");
+  const [searchDesc, setSearchDesc] = useState<string>("");
   const [expandedTxIds, setExpandedTxIds] = useState<Record<string, boolean>>({});
   const [batchLoading, setBatchLoading] = useState(false);
 
@@ -44,8 +46,28 @@ export function Dashboard({
   }, [currentMonth]);
 
   const filteredTransactions = transactions.filter(tx => {
-    if (selectedCategoryFilter === "all") return true;
-    return tx.category_id === selectedCategoryFilter;
+    let catMatch = selectedCategoryFilter === "all" || tx.category_id === selectedCategoryFilter;
+    
+    let personMatch = selectedPersonFilter === "all";
+    if (!personMatch) {
+      let splits = [];
+      if (tx.split_data) {
+        try { splits = JSON.parse(tx.split_data); } catch(e) {}
+      }
+      if (splits.length > 0) {
+        if (splits.some((s: any) => (s.person_id || 'none') === selectedPersonFilter)) {
+          personMatch = true;
+        }
+      } else {
+        if ((tx.person_id || 'none') === selectedPersonFilter) {
+          personMatch = true;
+        }
+      }
+    }
+
+    let searchMatch = searchDesc === "" || tx.description.toLowerCase().includes(searchDesc.toLowerCase());
+
+    return catMatch && personMatch && searchMatch;
   });
 
   const selectableTxs = filteredTransactions.filter(tx => !tx.is_projected);
@@ -164,7 +186,14 @@ export function Dashboard({
               const person = peopleMap[pId] || { name: 'Sem Categoria', color: '#64748b' };
               const percent = totalAmount > 0 ? (amount / totalAmount) * 100 : 0;
               return (
-                <div key={pId} className="group">
+                <div 
+                  key={pId} 
+                  className={`group cursor-pointer rounded-xl p-2.5 -m-2.5 transition-all duration-300 ${
+                    selectedPersonFilter === pId ? 'bg-white/10 ring-1 ring-white/20 shadow-lg' : 'hover:bg-white/5'
+                  }`}
+                  onClick={() => setSelectedPersonFilter(prev => prev === pId ? "all" : pId)}
+                  title={`Filtrar lançamentos de ${person.name}`}
+                >
                   <div className="flex justify-between text-sm mb-1.5">
                     <span className="flex items-center gap-2 text-slate-300 font-medium">
                       <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: person.color, boxShadow: `0 0 8px ${person.color}dd` }}></span>
@@ -200,38 +229,51 @@ export function Dashboard({
         </div>
 
         {/* Categories filtration row */}
-        <div className="flex flex-wrap items-center gap-2 px-6 py-4.5 bg-slate-950/20 border-b border-white/10">
-          <span className="text-[10px] font-bold uppercase text-slate-400 mr-2 tracking-wider">Filtrar por Categoria:</span>
-          <button
-            onClick={() => setSelectedCategoryFilter("all")}
-            className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-              selectedCategoryFilter === "all"
-                ? "bg-blue-600/30 border border-blue-500/80 text-blue-300 shadow-[0_0_10px_rgba(59,130,246,0.2)]"
-                : "bg-white/5 border border-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10"
-            }`}
-          >
-            Todas
-          </button>
-          {categories.map((c: any) => (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-6 py-4.5 bg-slate-950/20 border-b border-white/10">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] font-bold uppercase text-slate-400 mr-2 tracking-wider">Filtrar por Categoria:</span>
             <button
-              key={c.id}
-              onClick={() => setSelectedCategoryFilter(c.id)}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border ${
-                selectedCategoryFilter === c.id
-                  ? "text-white scale-105"
-                  : "bg-white/5 border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/10"
+              onClick={() => setSelectedCategoryFilter("all")}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                selectedCategoryFilter === "all"
+                  ? "bg-blue-600/30 border border-blue-500/80 text-blue-300 shadow-[0_0_10px_rgba(59,130,246,0.2)]"
+                  : "bg-white/5 border border-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10"
               }`}
-              style={{
-                borderColor: selectedCategoryFilter === c.id ? c.color : undefined,
-                backgroundColor: selectedCategoryFilter === c.id ? `${c.color}25` : undefined,
-                color: selectedCategoryFilter === c.id ? c.color : undefined,
-                boxShadow: selectedCategoryFilter === c.id ? `0 0 10px ${c.color}33` : undefined,
-              }}
             >
-              <CategoryIcon name={c.icon} size={13} className="shrink-0" />
-              {c.name}
+              Todas
             </button>
-          ))}
+            {categories.map((c: any) => (
+              <button
+                key={c.id}
+                onClick={() => setSelectedCategoryFilter(c.id)}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border ${
+                  selectedCategoryFilter === c.id
+                    ? "text-white scale-105"
+                    : "bg-white/5 border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/10"
+                }`}
+                style={{
+                  borderColor: selectedCategoryFilter === c.id ? c.color : undefined,
+                  backgroundColor: selectedCategoryFilter === c.id ? `${c.color}25` : undefined,
+                  color: selectedCategoryFilter === c.id ? c.color : undefined,
+                  boxShadow: selectedCategoryFilter === c.id ? `0 0 10px ${c.color}33` : undefined,
+                }}
+              >
+                <CategoryIcon name={c.icon} size={13} className="shrink-0" />
+                {c.name}
+              </button>
+            ))}
+          </div>
+
+          {selectedPersonFilter !== "all" && (
+            <div className="flex items-center gap-2 bg-purple-500/10 border border-purple-500/20 px-3 py-1.5 rounded-full">
+              <span className="text-xs font-semibold text-purple-300">
+                Pessoa: {selectedPersonFilter === 'none' ? 'Sem Categoria' : peopleMap[selectedPersonFilter]?.name}
+              </span>
+              <button onClick={() => setSelectedPersonFilter("all")} className="text-purple-400 hover:text-purple-200 ml-1">
+                &times;
+              </button>
+            </div>
+          )}
         </div>
 
         {selectedIds.length > 0 && (
@@ -294,7 +336,7 @@ export function Dashboard({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
+            <table className="w-full text-xs text-left">
               <thead className="bg-slate-950/60 border-b border-white/10 text-slate-400 uppercase text-[10px] font-bold tracking-wider">
                 <tr>
                   <th className="px-4 py-3.5 w-[40px] text-center" onClick={(e) => e.stopPropagation()}>
@@ -305,12 +347,27 @@ export function Dashboard({
                       className="w-4 h-4 rounded border-white/15 text-cyan-500 focus:ring-cyan-500/50 bg-white/5 cursor-pointer accent-cyan-500"
                     />
                   </th>
-                  <th className="px-6 py-3.5">Data</th>
-                  <th className="px-6 py-3.5">Descrição</th>
-                  <th className="px-6 py-3.5 text-center">Parcela</th>
-                  <th className="px-6 py-3.5">Responsável</th>
-                  <th className="px-6 py-3.5 text-right">Valor</th>
-                  <th className="px-6 py-3.5 w-[100px]"></th>
+                  <th className="px-5 py-3.5">Data</th>
+                  <th className="px-5 py-3.5">Descrição</th>
+                  <th className="px-5 py-3.5 text-center">Parcela</th>
+                  <th className="px-5 py-3.5">Responsável</th>
+                  <th className="px-5 py-3.5 text-right">Valor</th>
+                  <th className="px-5 py-3.5 w-[80px]"></th>
+                </tr>
+                {/* Search / Filter Row */}
+                <tr className="bg-slate-950/40 border-b border-white/5">
+                  <th className="px-4 py-2 border-r border-white/5"></th>
+                  <th className="px-5 py-2 border-r border-white/5"></th>
+                  <th className="px-5 py-2 border-r border-white/5">
+                    <input 
+                      type="text"
+                      placeholder="Pesquisar descrição..."
+                      value={searchDesc}
+                      onChange={(e) => setSearchDesc(e.target.value)}
+                      className="w-full bg-black/20 border border-white/10 rounded-md px-2 py-1.5 text-[11px] font-normal text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500/50 transition-all font-sans"
+                    />
+                  </th>
+                  <th colSpan={4} className="px-5 py-2"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -342,43 +399,43 @@ export function Dashboard({
                             />
                           )}
                         </td>
-                        <td className="px-6 py-4 text-slate-400 font-mono text-xs">{tx.original_date}</td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
+                        <td className="px-5 py-3 text-slate-400 font-mono text-[11px]">{tx.original_date}</td>
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-2.5">
                             {/* Category logo/icon rendered nicely circular inside neon glow */}
                             {(() => {
                               const cat = tx.category_id ? categoriesMap[tx.category_id] : null;
                               if (cat) {
                                 return (
                                   <div 
-                                    className="w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0" 
+                                    className="w-7 h-7 rounded-lg flex items-center justify-center text-white shrink-0" 
                                     style={{ 
                                       backgroundColor: cat.color, 
                                       boxShadow: `0 0 10px ${cat.color}66` 
                                     }}
                                     title={`Categoria: ${cat.name}`}
                                   >
-                                    <CategoryIcon name={cat.icon} size={15} />
+                                    <CategoryIcon name={cat.icon} size={13} />
                                   </div>
                                 );
                               }
                               return (
-                                <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-slate-800/40 border border-white/5 text-slate-500 shrink-0" title="Sem categoria">
-                                  <CategoryIcon name="Tag" size={14} />
+                                <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-slate-800/40 border border-white/5 text-slate-500 shrink-0" title="Sem categoria">
+                                  <CategoryIcon name="Tag" size={13} />
                                 </div>
                               );
                             })()}
                             
                             <div>
-                              <div className="font-bold text-slate-100 flex items-center gap-1.5">
+                              <div className="font-bold text-slate-100 flex items-center gap-1.5 leading-tight text-xs">
                                 {tx.description}
                                 {tx.notes && (
-                                  <span className="text-[10px] text-blue-400 bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded-md font-normal flex items-center gap-1">
+                                  <span className="text-[9px] text-blue-400 bg-blue-500/10 border border-blue-500/20 px-1 py-0.5 rounded leading-none flex items-center gap-1">
                                     Nota
                                   </span>
                                 )}
                               </div>
-                              <div className="text-[10px] uppercase font-bold tracking-wider text-slate-450 mt-1 flex gap-2">
+                              <div className="text-[9px] uppercase font-bold tracking-wider text-slate-450 mt-0.5 flex gap-2">
                                 {tx.is_imported === 1 ? (
                                   <span className="text-blue-400">Importado</span>
                                 ) : isProjected ? (
@@ -390,12 +447,12 @@ export function Dashboard({
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-4 text-center">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-mono font-bold bg-white/5 text-slate-300 border border-white/10">
-                            {tx.current_installment} / {tx.total_installment}
+                        <td className="px-5 py-3 text-center">
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-white/5 text-slate-300 border border-white/10">
+                            {tx.current_installment}/{tx.total_installment}
                           </span>
                         </td>
-                        <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
                           {(() => {
                             let splits = [];
                             if (tx.split_data) {
@@ -431,26 +488,26 @@ export function Dashboard({
                             return <span className="text-xs text-slate-500">-</span>;
                           })()}
                         </td>
-                        <td className="px-6 py-4 text-right font-semibold text-white">
+                        <td className="px-5 py-3 text-right font-semibold text-white">
                           {formatCurrency(tx.amount)}
                         </td>
-                        <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
                             {!isProjected && (
                               <button 
                                 onClick={() => setEditingTx(tx)}
-                                className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-white/5 rounded-xl transition-all duration-300 cursor-pointer"
+                                className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-white/5 rounded-lg transition-all duration-300 cursor-pointer"
                                 title="Editar Responsável e Categoria"
                               >
-                                <Edit2 size={15} />
+                                <Edit2 size={13} />
                               </button>
                             )}
                             <button 
                               onClick={() => handleDelete(tx.id, isProjected)}
-                              className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-white/5 rounded-xl transition-all duration-300 cursor-pointer"
+                              className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-white/5 rounded-lg transition-all duration-300 cursor-pointer"
                               title="Excluir Lançamento"
                             >
-                              <Trash2 size={15} />
+                              <Trash2 size={13} />
                             </button>
                           </div>
                         </td>

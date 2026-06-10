@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { fetchPeople, fetchMonths, fetchCategories } from './lib/api';
 import { Dashboard } from './components/Dashboard';
 import { UploadForm, ManualTransactionForm, PeopleManager, CategoryManager } from './components/Forms';
+import { CategoryChart } from './components/CategoryChart';
 import { CreditCard, Calendar } from 'lucide-react';
 
 export default function App() {
@@ -109,6 +110,7 @@ export default function App() {
           {/* Right Column - Controls */}
           <div className="space-y-6">
             <UploadForm currentMonth={currentMonth} onUploadSuccess={triggerRefresh} />
+            <CategoryChart currentMonth={currentMonth} categories={categories} refreshKey={refreshKey} />
             <ManualTransactionForm currentMonth={currentMonth} peopleList={people} categoriesList={categories} onSuccess={triggerRefresh} />
             <PeopleManager peopleList={people} onUpdate={triggerRefresh} />
             <CategoryManager categoriesList={categories} onUpdate={triggerRefresh} />
