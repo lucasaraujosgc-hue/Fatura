@@ -3,27 +3,56 @@ import pdfParse from "pdf-parse";
 import { GoogleGenAI } from "@google/genai";
 import fs from "fs";
 
-// Robustly resolve the external CommonJS module pdf-parse
-let pdfParserFn: any = pdfParse;
-if (typeof pdfParserFn !== "function" && pdfParserFn && (pdfParserFn as any).default) {
-  pdfParserFn = (pdfParserFn as any).default;
-}
-if (typeof pdfParserFn !== "function") {
-  try {
-    // @ts-ignore
-    pdfParserFn = typeof require !== 'undefined' ? require("pdf-parse") : null;
-  } catch (e) {
-    console.error("Failed to require pdf-parse dynamically:", e);
-  }
-}
-
 export async function parseInvoicePDF(filePath: string, invoiceMonth: string) {
   const dataBuffer = fs.readFileSync(filePath);
   
-  // Basic PDF text extraction
-  if (typeof pdfParserFn !== "function") {
-    throw new Error("Não foi possível carregar a funcionalidade de leitura de PDF (pdf-parse is not a function). Verifique logs do servidor.");
+  // Diagnostic tracing for pdf-parse module resolution
+  const diagnostics: string[] = [];
+  diagnostics.push(`Type of top-level import pdfParse: ${typeof pdfParse}`);
+  if (pdfParse) {
+    diagnostics.push(`Keys of pdfParse: ${Object.keys(pdfParse).join(", ")}`);
+    diagnostics.push(`Type of pdfParse.default: ${typeof (pdfParse as any).default}`);
   }
+  
+  let reqPdf: any = null;
+  try {
+    // @ts-ignore
+    reqPdf = typeof require !== 'undefined' ? require("pdf-parse") : null;
+    diagnostics.push(`Type of require('pdf-parse'): ${typeof reqPdf}`);
+    if (reqPdf) {
+      diagnostics.push(`Keys of require('pdf-parse'): ${Object.keys(reqPdf).join(", ")}`);
+      diagnostics.push(`Type of require('pdf-parse').default: ${typeof reqPdf.default}`);
+    }
+  } catch (err: any) {
+    diagnostics.push(`require('pdf-parse') threw: ${err.message}`);
+  }
+
+  let dynPdf: any = null;
+  try {
+    dynPdf = await import("pdf-parse");
+    diagnostics.push(`Type of import('pdf-parse'): ${typeof dynPdf}`);
+    if (dynPdf) {
+      diagnostics.push(`Keys of import('pdf-parse'): ${Object.keys(dynPdf).join(", ")}`);
+      diagnostics.push(`Type of import('pdf-parse').default: ${typeof dynPdf.default}`);
+    }
+  } catch (err: any) {
+    diagnostics.push(`import('pdf-parse') threw: ${err.message}`);
+  }
+
+  // Search logic for the actual function
+  let pdfParserFn: any = null;
+  if (typeof pdfParse === "function") pdfParserFn = pdfParse;
+  else if (pdfParse && typeof (pdfParse as any).default === "function") pdfParserFn = (pdfParse as any).default;
+  else if (reqPdf && typeof reqPdf === "function") pdfParserFn = reqPdf;
+  else if (reqPdf && typeof reqPdf.default === "function") pdfParserFn = reqPdf.default;
+  else if (dynPdf && typeof dynPdf === "function") pdfParserFn = dynPdf;
+  else if (dynPdf && typeof dynPdf.default === "function") pdfParserFn = dynPdf.default;
+  else if (dynPdf && dynPdf.default && typeof (dynPdf as any).default.default === "function") pdfParserFn = (dynPdf as any).default.default;
+
+  if (typeof pdfParserFn !== "function") {
+    throw new Error(`[ERRO_PDF_RESOLVE] Diagnósticos de carregamento: ${diagnostics.join(" | ")}`);
+  }
+
   const data = await pdfParserFn(dataBuffer);
   const text = data.text;
 
