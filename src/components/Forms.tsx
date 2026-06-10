@@ -7,6 +7,34 @@ export function UploadForm({ currentMonth, onUploadSuccess }: { currentMonth: st
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [conflicts, setConflicts] = useState<any[]>([]);
+  const [resolutions, setResolutions] = useState<Record<string, string>>({});
+  const [lastOverwrite, setLastOverwrite] = useState(false);
+
+  const performUpload = async (overwrite: boolean, resData?: Record<string, string>) => {
+    if (!file) return;
+    setLoading(true);
+    setError("");
+    try {
+      const resp = await uploadInvoice(file, currentMonth, overwrite, resData);
+      if (resp.requireResolution) {
+        setConflicts(resp.conflicts);
+        const initialRes: Record<string, string> = {};
+        resp.conflicts.forEach((c: any) => initialRes[c.conflictId] = 'ignore');
+        setResolutions(initialRes);
+        setLastOverwrite(overwrite);
+      } else {
+        onUploadSuccess();
+        setFile(null);
+        setConflicts([]);
+        alert(`Fatura importada com sucesso! ${resp.count} lançamentos.`);
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,22 +45,15 @@ export function UploadForm({ currentMonth, onUploadSuccess }: { currentMonth: st
     }
 
     const overwrite = confirm("Deseja SOBRESCREVER dados anteriores importados desse mês? (Recomendado se você está atualizando a fatura deste mês)");
-    
-    setLoading(true);
-    setError("");
-    try {
-      await uploadInvoice(file, currentMonth, overwrite);
-      onUploadSuccess();
-      setFile(null);
-      alert("Fatura importada com sucesso!");
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    performUpload(overwrite);
+  };
+
+  const submitResolutions = () => {
+    performUpload(lastOverwrite, resolutions);
   };
 
   return (
+    <>
     <form onSubmit={handleUpload} className="bg-slate-950/40 p-6 rounded-2xl border border-white/10 backdrop-blur-xl shadow-xl">
       <h3 className="font-display font-semibold text-slate-100 mb-4 flex items-center gap-2">
         <Upload size={18} className="text-blue-400" />
@@ -44,7 +65,10 @@ export function UploadForm({ currentMonth, onUploadSuccess }: { currentMonth: st
           <input 
             type="file" 
             accept="application/pdf"
-            onChange={e => setFile(e.target.files?.[0] || null)}
+            onChange={e => {
+                setFile(e.target.files?.[0] || null);
+                setConflicts([]);
+            }}
             className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-blue-500/10 file:text-blue-400 hover:file:bg-blue-500/20 border border-white/10 rounded-xl bg-white/5 cursor-pointer"
             required
           />
@@ -59,6 +83,79 @@ export function UploadForm({ currentMonth, onUploadSuccess }: { currentMonth: st
         <p className="text-xs text-slate-400 text-center">Mês selecionado: <span className="font-mono text-blue-400 font-medium">{currentMonth}</span></p>
       </div>
     </form>
+
+    {conflicts.length > 0 && (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#060814]/80 backdrop-blur-md p-4">
+        <div className="bg-slate-900 border border-white/10 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col pt-6 pb-2 sm:pb-0 px-2 sm:px-0">
+          <div className="px-6 mb-4">
+             <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-400"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                 Conflitos Encontrados
+             </h2>
+             <p className="text-sm text-slate-400 mt-1">
+                Encontramos {conflicts.length} lançamentos da fatura que são muto parecidos com lançamentos já existentes (mesma data, valor parecido). Como deseja resolvê-los?
+             </p>
+          </div>
+          
+          <div className="overflow-y-auto flex-1 px-6 space-y-4 pb-4">
+             {conflicts.map((c, i) => (
+                <div key={c.conflictId} className="bg-slate-950/60 border border-white/5 p-4 rounded-xl space-y-3">
+                   <div className="flex flex-col sm:flex-row gap-4 divide-y sm:divide-y-0 sm:divide-x divide-white/10">
+                      <div className="flex-1 space-y-1">
+                          <p className="text-xs uppercase tracking-wider font-bold text-slate-500">Já Existente</p>
+                          <p className="text-sm font-semibold text-slate-200">{c.existing.description}</p>
+                          <p className="text-xs text-slate-400 font-mono">{c.existing.original_date} • R$ {c.existing.amount.toFixed(2)}</p>
+                      </div>
+                      <div className="flex-1 space-y-1 sm:pl-4 pt-4 sm:pt-0">
+                          <p className="text-xs uppercase tracking-wider font-bold text-amber-500">Da Fatura</p>
+                          <p className="text-sm font-semibold text-amber-200/90">{c.extracted.description}</p>
+                          <p className="text-xs text-slate-400 font-mono">{c.extracted.date} • R$ {c.extracted.amount.toFixed(2)}</p>
+                      </div>
+                   </div>
+                   <div className="flex flex-wrap gap-2 pt-2 border-t border-white/5">
+                      <button 
+                         type="button" 
+                         onClick={() => setResolutions(prev => ({...prev, [c.conflictId]: 'ignore'}))}
+                         className={`flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-all ${resolutions[c.conflictId] === 'ignore' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-white/5 text-slate-400 border border-transparent hover:bg-white/10'}`}
+                      >
+                         Ignorar (Manter o Existente)
+                      </button>
+                      <button 
+                         type="button" 
+                         onClick={() => setResolutions(prev => ({...prev, [c.conflictId]: 'replace'}))}
+                         className={`flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-all ${resolutions[c.conflictId] === 'replace' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-white/5 text-slate-400 border border-transparent hover:bg-white/10'}`}
+                      >
+                         Substituir pelo da Fatura
+                      </button>
+                   </div>
+                </div>
+             ))}
+          </div>
+
+          <div className="p-4 sm:p-6 border-t border-white/10 bg-slate-900/50 flex flex-col sm:flex-row justify-end gap-3 mt-auto">
+             <button
+                type="button"
+                onClick={() => {
+                    setConflicts([]);
+                    setResolutions({});
+                }}
+                className="px-4 py-2 text-sm font-semibold text-slate-400 bg-white/5 hover:bg-white/10 rounded-xl"
+             >
+                Cancelar Importação
+             </button>
+             <button
+                type="button"
+                onClick={submitResolutions}
+                disabled={loading}
+                className="px-5 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-lg shadow-blue-500/20"
+             >
+                {loading ? "Aplicando..." : "Confirmar Seleções e Importar"}
+             </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }
 

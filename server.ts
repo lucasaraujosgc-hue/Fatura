@@ -186,16 +186,85 @@ async function startServer() {
         return res.status(400).json({ error: "No file uploaded" });
       }
       
-      const { invoiceMonth, overwrite } = req.body;
+      const { invoiceMonth, overwrite, resolutions } = req.body;
       if (!invoiceMonth) {
         return res.status(400).json({ error: "invoiceMonth (YYYY-MM) is required" });
       }
 
       console.log(`Extracting data for month ${invoiceMonth}...`);
-      const extractedTransactions = await parseInvoicePDF(req.file.path, invoiceMonth);
+      let extractedTransactions = await parseInvoicePDF(req.file.path, invoiceMonth);
 
-      console.log(`Importing ${extractedTransactions.length} transactions for ${invoiceMonth}...`);
-      await importTransactions(invoiceMonth, extractedTransactions, overwrite === "true");
+      // Check for conflicts
+      const { getTransactionsForMonth } = await import("./server/db.js");
+      const existingTxs = await getTransactionsForMonth(invoiceMonth);
+
+      // We only care about explicit ones, actually getTransactionsForMonth returns projected ones too if no imports yet.
+      // Filter out projected ones for the conflict check
+      const explicitExisting = existingTxs.filter((tx: any) => !tx.is_projected);
+      
+      let conflicts: any[] = [];
+      let parsedResolutions: Record<string, string> = {};
+      
+      if (resolutions) {
+         try {
+           parsedResolutions = JSON.parse(resolutions);
+         } catch (e) {}
+      }
+
+      const txsToImport = [];
+
+      for (let i = 0; i < extractedTransactions.length; i++) {
+        const extTx = extractedTransactions[i];
+        
+        // Find if there's a conflict
+        const conflict = explicitExisting.find((ex: any) => {
+           const sameDate = ex.original_date === extTx.date;
+           const amountDiff = Math.abs(ex.amount - extTx.amount);
+           return sameDate && amountDiff <= 0.05;
+        });
+
+        if (conflict) {
+           // We assign an index-based ID for resolution tracking
+           const conflictId = `conflict_${i}`;
+           
+           if (!parsedResolutions[conflictId]) {
+              conflicts.push({
+                 conflictId,
+                 extracted: extTx,
+                 existing: conflict
+              });
+              txsToImport.push(extTx); // temporarily keep it, will be handled later
+           } else {
+              const resValue = parsedResolutions[conflictId];
+              if (resValue === 'replace') {
+                 // The user wants to replace the existing one with the extracted one.
+                 // We need to keep extracted one, and delete the existing one.
+                 txsToImport.push(extTx);
+                 await deleteTransaction(conflict.id);
+              } else if (resValue === 'ignore') {
+                 // User wants to ignore the extracted one. Don't push to txsToImport.
+                 // Keep the existing one.
+              }
+           }
+        } else {
+           txsToImport.push(extTx);
+        }
+      }
+
+      // If we found conflicts and haven't resolved them all, return them to client
+      if (conflicts.length > 0) {
+          // Delete temp PDF
+          try { fs.unlinkSync(req.file.path); } catch (e) {}
+          
+          return res.json({ 
+             success: false, 
+             requireResolution: true, 
+             conflicts 
+          });
+      }
+
+      console.log(`Importing ${txsToImport.length} transactions for ${invoiceMonth}...`);
+      await importTransactions(invoiceMonth, txsToImport, overwrite === "true");
 
       // Save PDF to backup directory instead of deleting
       const dataDir = process.env.DATA_DIR || path.resolve(process.cwd(), "data");
@@ -208,7 +277,7 @@ async function startServer() {
       fs.copyFileSync(req.file.path, targetPath);
       fs.unlinkSync(req.file.path);
 
-      res.json({ success: true, count: extractedTransactions.length });
+      res.json({ success: true, count: txsToImport.length });
     } catch (err: any) {
       console.error(err);
       if (req.file) {

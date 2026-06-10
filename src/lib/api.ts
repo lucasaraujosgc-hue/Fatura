@@ -95,11 +95,14 @@ export async function deleteCategory(id: string) {
   await fetch(`${API_BASE}/categories/${id}`, { method: "DELETE" });
 }
 
-export async function uploadInvoice(file: File, month: string, overwrite: boolean) {
+export async function uploadInvoice(file: File, month: string, overwrite: boolean, resolutions?: Record<string, string>) {
   const formData = new FormData();
   formData.append("pdf", file);
   formData.append("invoiceMonth", month);
   formData.append("overwrite", overwrite.toString());
+  if (resolutions) {
+    formData.append("resolutions", JSON.stringify(resolutions));
+  }
 
   const res = await fetch(`${API_BASE}/upload`, {
     method: "POST",

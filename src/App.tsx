@@ -66,21 +66,97 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-3 z-10">
-            <span className="text-sm font-medium text-slate-400 whitespace-nowrap">Mês de Referência:</span>
-            <div className="relative">
-              <select
-                value={currentMonth}
-                onChange={(e) => setCurrentMonth(e.target.value)}
-                className="appearance-none bg-white/5 border border-white/10 text-slate-100 text-sm rounded-xl focus:ring-blue-500/50 focus:border-blue-500/50 block w-full pl-3 pr-10 py-2.5 font-medium outline-none cursor-pointer hover:bg-white/10 transition-all duration-300"
+            <span className="text-sm font-medium text-slate-400 whitespace-nowrap">Fatura:</span>
+            
+            <div className="flex items-center bg-white/5 border border-white/10 rounded-xl p-1 shadow-inner">
+              <button 
+                onClick={() => {
+                  const sorted = [...months].sort();
+                  const idx = sorted.indexOf(currentMonth);
+                  if (idx > 0) {
+                    setCurrentMonth(sorted[idx - 1]);
+                  } else {
+                    // Try to generate previous month
+                    if (currentMonth) {
+                      const [y, m] = currentMonth.split('-');
+                      let ny = parseInt(y), nm = parseInt(m) - 1;
+                      if (nm === 0) { ny--; nm = 12; }
+                      setCurrentMonth(`${ny}-${nm.toString().padStart(2, '0')}`);
+                    }
+                  }
+                  triggerRefresh();
+                }}
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                title="Mês Anterior"
               >
-                {months.map(m => (
-                  <option key={m} value={m} className="bg-[#0b0d1b] text-slate-100 font-medium">
-                    {new Date(m + "-01").toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
-                  </option>
-                ))}
-              </select>
-              <Calendar size={16} className="absolute right-3 top-3.5 pointer-events-none text-slate-400" />
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+              </button>
+              
+              <div className="flex items-center gap-1 px-2 overflow-hidden w-[220px] justify-center relative">
+                {(() => {
+                  const sorted = [...months].sort();
+                  const idx = sorted.indexOf(currentMonth);
+                  
+                  // Simple generation of months to show if they don't exist in array
+                  const getMonthString = (offset) => {
+                    if (!currentMonth) return "";
+                    const [y, m] = currentMonth.split('-');
+                    let ny = parseInt(y), nm = parseInt(m) + offset;
+                    while (nm > 12) { ny++; nm -= 12; }
+                    while (nm < 1) { ny--; nm += 12; }
+                    return `${ny}-${nm.toString().padStart(2, '0')}`;
+                  };
+
+                  const prevMonth = (idx > 0 && sorted[idx-1]) || getMonthString(-1);
+                  const nextMonth = (idx >= 0 && idx < sorted.length - 1 && sorted[idx+1]) || getMonthString(1);
+
+                  const formatM = (iso) => {
+                     const d = new Date(iso + "-01");
+                     const text = d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
+                     return text.charAt(0).toUpperCase() + text.slice(1);
+                  };
+
+                  return (
+                    <div className="flex items-center w-full justify-between">
+                       <div className="w-[60px] text-center text-xs font-semibold text-slate-500 opacity-60 truncate cursor-not-allowed hidden sm:block">
+                          {formatM(prevMonth)}
+                       </div>
+                       
+                       <div className="px-4 py-1.5 bg-slate-800/80 border border-slate-600 shadow-md rounded-xl text-sm font-bold text-slate-100 min-w-[90px] text-center">
+                          {formatM(currentMonth)} {currentMonth.split('-')[0]}
+                       </div>
+                       
+                       <div className="w-[60px] text-center text-xs font-semibold text-slate-500 opacity-60 truncate cursor-not-allowed hidden sm:block">
+                          {formatM(nextMonth)}
+                       </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <button 
+                onClick={() => {
+                  const sorted = [...months].sort();
+                  const idx = sorted.indexOf(currentMonth);
+                  if (idx !== -1 && idx < sorted.length - 1) {
+                    setCurrentMonth(sorted[idx + 1]);
+                  } else {
+                    if (currentMonth) {
+                      const [y, m] = currentMonth.split('-');
+                      let ny = parseInt(y), nm = parseInt(m) + 1;
+                      if (nm > 12) { ny++; nm = 1; }
+                      setCurrentMonth(`${ny}-${nm.toString().padStart(2, '0')}`);
+                    }
+                  }
+                  triggerRefresh();
+                }}
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                title="Próximo Mês"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+              </button>
             </div>
+
             <button 
               onClick={() => {
                 const year = prompt("Digite o ano (YYYY):", new Date().getFullYear().toString());
@@ -90,9 +166,10 @@ export default function App() {
                     triggerRefresh();
                 }
               }}
-              className="text-xs font-semibold text-slate-100 bg-white/5 border border-white/10 px-4 py-2.5 rounded-xl hover:bg-white/10 hover:border-white/20 active:scale-95 transition-all duration-300 cursor-pointer"
+              className="text-xs font-semibold text-slate-400 bg-white/5 border border-white/5 px-2.5 py-2.5 rounded-xl hover:text-slate-100 hover:bg-white/10 hover:border-white/20 active:scale-95 transition-all duration-300 cursor-pointer"
+              title="Pular para mês..."
             >
-              Novo Mês
+              <Calendar size={16} />
             </button>
           </div>
         </div>
