@@ -26,6 +26,13 @@ export async function setupDb() {
       color TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS categories (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL,
+      icon TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS transactions (
       id TEXT PRIMARY KEY,
       billed_month TEXT NOT NULL,
@@ -45,6 +52,64 @@ export async function setupDb() {
   } catch (e) {
     // Ignore if column already exists
   }
+
+  try {
+    await db.exec(`ALTER TABLE transactions ADD COLUMN category_id TEXT;`);
+  } catch (e) {
+    // Ignore if column already exists
+  }
+
+  try {
+    await db.exec(`ALTER TABLE transactions ADD COLUMN notes TEXT;`);
+  } catch (e) {
+    // Ignore if column already exists
+  }
+
+  // Populate default categories if empty
+  try {
+    const countRow = await db.get("SELECT COUNT(*) as count FROM categories");
+    if (!countRow || countRow.count === 0) {
+      const defaultCategories = [
+        { id: uuidv4(), name: "Academias", color: "#4ade80", icon: "Dumbbell" },
+        { id: uuidv4(), name: "Alimentação", color: "#ec4899", icon: "Utensils" },
+        { id: uuidv4(), name: "Assinaturas e Serviços", color: "#a855f7", icon: "CreditCard" },
+        { id: uuidv4(), name: "Bares e restaurantes", color: "#3b82f6", icon: "Wine" },
+        { id: uuidv4(), name: "Casa", color: "#06b6d4", icon: "Home" },
+        { id: uuidv4(), name: "Casamento / Viagem", color: "#f43f5e", icon: "Heart" },
+        { id: uuidv4(), name: "Compras", color: "#ec4899", icon: "ShoppingBag" },
+        { id: uuidv4(), name: "Educação", color: "#6366f1", icon: "GraduationCap" },
+        { id: uuidv4(), name: "Mercado", color: "#f97316", icon: "ShoppingCart" },
+        { id: uuidv4(), name: "Pets", color: "#eab308", icon: "PawPrint" },
+        { id: uuidv4(), name: "Lazer e hobbies", color: "#84cc16", icon: "Smile" },
+        { id: uuidv4(), name: "Outros", color: "#64748b", icon: "List" }
+      ];
+      for (const cat of defaultCategories) {
+        await db.run("INSERT INTO categories (id, name, color, icon) VALUES (?, ?, ?, ?)", [cat.id, cat.name, cat.color, cat.icon]);
+      }
+    }
+  } catch (err) {
+    console.error("Error seeding categories:", err);
+  }
+}
+
+export async function getCategories() {
+  return await db.all("SELECT * FROM categories");
+}
+
+export async function createCategory(name: string, color: string, icon: string) {
+  const id = uuidv4();
+  await db.run("INSERT INTO categories (id, name, color, icon) VALUES (?, ?, ?, ?)", [id, name, color, icon]);
+  return { id, name, color, icon };
+}
+
+export async function updateCategory(id: string, name: string, color: string, icon: string) {
+  await db.run("UPDATE categories SET name = ?, color = ?, icon = ? WHERE id = ?", [name, color, icon, id]);
+  return { id, name, color, icon };
+}
+
+export async function deleteCategory(id: string) {
+  await db.run("DELETE FROM categories WHERE id = ?", [id]);
+  await db.run("UPDATE transactions SET category_id = NULL WHERE category_id = ?", [id]);
 }
 
 export async function getPeople() {
@@ -132,13 +197,24 @@ export async function getTransactionsForMonth(month: string) {
 }
 
 export async function addManualTransaction(data: any) {
-  const { billed_month, original_date, description, amount, current_installment, total_installment, person_id } = data;
+  const { billed_month, original_date, description, amount, current_installment, total_installment, person_id, category_id, notes } = data;
   const id = uuidv4();
   await db.run(`
     INSERT INTO transactions 
-    (id, billed_month, original_date, description, amount, current_installment, total_installment, person_id, is_imported) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
-  `, [id, billed_month, original_date, description, amount, current_installment || 1, total_installment || 1, person_id || null]);
+    (id, billed_month, original_date, description, amount, current_installment, total_installment, person_id, is_imported, category_id, notes) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+  `, [
+    id, 
+    billed_month, 
+    original_date, 
+    description, 
+    amount, 
+    current_installment || 1, 
+    total_installment || 1, 
+    person_id || null,
+    category_id || null,
+    notes || null
+  ]);
   
   return await db.get("SELECT * FROM transactions WHERE id = ?", [id]);
 }
@@ -147,11 +223,46 @@ export async function deleteTransaction(id: string) {
   await db.run("DELETE FROM transactions WHERE id = ?", [id]);
 }
 
-export async function updateTransactionConfig(id: string, person_id: string | null, split_data: any | null) {
-  await db.run(
-    "UPDATE transactions SET person_id = ?, split_data = ? WHERE id = ?",
-    [person_id, split_data ? JSON.stringify(split_data) : null, id]
-  );
+export async function updateTransactionConfig(
+  id: string,
+  person_id: string | null,
+  split_data: any | null,
+  category_id: string | null = undefined,
+  notes: string | null = undefined
+) {
+  if (category_id !== undefined && notes !== undefined) {
+    await db.run(
+      "UPDATE transactions SET person_id = ?, split_data = ?, category_id = ?, notes = ? WHERE id = ?",
+      [person_id, split_data ? JSON.stringify(split_data) : null, category_id, notes, id]
+    );
+  } else if (category_id !== undefined) {
+    await db.run(
+      "UPDATE transactions SET person_id = ?, split_data = ?, category_id = ? WHERE id = ?",
+      [person_id, split_data ? JSON.stringify(split_data) : null, category_id, id]
+    );
+  } else if (notes !== undefined) {
+    await db.run(
+      "UPDATE transactions SET person_id = ?, split_data = ?, notes = ? WHERE id = ?",
+      [person_id, split_data ? JSON.stringify(split_data) : null, notes, id]
+    );
+  } else {
+    await db.run(
+      "UPDATE transactions SET person_id = ?, split_data = ? WHERE id = ?",
+      [person_id, split_data ? JSON.stringify(split_data) : null, id]
+    );
+  }
+}
+
+export async function batchUpdateTransactions(ids: string[], person_id?: string | null, category_id?: string | null) {
+  for (const id of ids) {
+    if (person_id !== undefined && category_id !== undefined) {
+      await db.run("UPDATE transactions SET person_id = ?, category_id = ? WHERE id = ?", [person_id, category_id, id]);
+    } else if (person_id !== undefined) {
+      await db.run("UPDATE transactions SET person_id = ? WHERE id = ?", [person_id, id]);
+    } else if (category_id !== undefined) {
+      await db.run("UPDATE transactions SET category_id = ? WHERE id = ?", [category_id, id]);
+    }
+  }
 }
 
 export async function importTransactions(month: string, extractedTx: any[], overwrite: boolean) {

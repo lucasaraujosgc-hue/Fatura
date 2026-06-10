@@ -1,19 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { fetchPeople, fetchMonths } from './lib/api';
+import { fetchPeople, fetchMonths, fetchCategories } from './lib/api';
 import { Dashboard } from './components/Dashboard';
-import { UploadForm, ManualTransactionForm, PeopleManager } from './components/Forms';
+import { UploadForm, ManualTransactionForm, PeopleManager, CategoryManager } from './components/Forms';
 import { CreditCard, Calendar } from 'lucide-react';
 
 export default function App() {
   const [people, setPeople] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
   const [months, setMonths] = useState<string[]>([]);
   const [currentMonth, setCurrentMonth] = useState<string>("");
   const [refreshKey, setRefreshKey] = useState(0);
 
   const loadData = async () => {
     try {
-      const [ppl, mnts] = await Promise.all([fetchPeople(), fetchMonths()]);
+      const [ppl, mnts, cats] = await Promise.all([fetchPeople(), fetchMonths(), fetchCategories()]);
       setPeople(ppl);
+      setCategories(cats || []);
       
       const distinctMonths = mnts.length > 0 ? mnts : [new Date().toISOString().slice(0, 7)];
       
@@ -101,14 +103,15 @@ export default function App() {
           
           {/* Left Column - Dashboard */}
           <div className="lg:col-span-2">
-            <Dashboard currentMonth={currentMonth} peopleMap={peopleMap} />
+            <Dashboard currentMonth={currentMonth} peopleMap={peopleMap} categories={categories} />
           </div>
 
           {/* Right Column - Controls */}
           <div className="space-y-6">
             <UploadForm currentMonth={currentMonth} onUploadSuccess={triggerRefresh} />
-            <ManualTransactionForm currentMonth={currentMonth} peopleList={people} onSuccess={triggerRefresh} />
+            <ManualTransactionForm currentMonth={currentMonth} peopleList={people} categoriesList={categories} onSuccess={triggerRefresh} />
             <PeopleManager peopleList={people} onUpdate={triggerRefresh} />
+            <CategoryManager categoriesList={categories} onUpdate={triggerRefresh} />
           </div>
 
         </div>

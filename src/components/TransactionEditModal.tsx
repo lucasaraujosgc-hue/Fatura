@@ -5,15 +5,19 @@ import { X, Plus, Trash2, Tag } from "lucide-react";
 export function TransactionEditModal({ 
   transaction, 
   people, 
+  categories = [],
   onClose, 
   onSave 
 }: { 
   transaction: any, 
   people: any[], 
+  categories: any[],
   onClose: () => void, 
   onSave: () => void 
 }) {
   const [personId, setPersonId] = useState<string>(transaction.person_id || "");
+  const [categoryId, setCategoryId] = useState<string>(transaction.category_id || "");
+  const [notes, setNotes] = useState<string>(transaction.notes || "");
   const [splits, setSplits] = useState<{person_id: string, amount: string}[]>([]);
   const [isSplit, setIsSplit] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -61,7 +65,7 @@ export function TransactionEditModal({
         finalPersonId = personId || null;
       }
 
-      await updateTransactionConfig(transaction.id, finalPersonId, finalSplitData);
+      await updateTransactionConfig(transaction.id, finalPersonId, finalSplitData, categoryId || null, notes || null);
       onSave();
     } catch (err) {
       alert("Erro ao salvar configurações");
@@ -173,6 +177,35 @@ export function TransactionEditModal({
               </button>
             </div>
           )}
+
+          {/* Categoria Selection */}
+          <div className="pt-2 border-t border-white/5">
+            <label className="block text-sm font-semibold text-slate-400 mb-1.5">Categoria</label>
+            <select 
+              value={categoryId} 
+              onChange={e=>setCategoryId(e.target.value)} 
+              className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-slate-100 outline-none focus:border-blue-500/50 transition-all duration-300 text-sm"
+            >
+              <option value="" className="bg-[#0b0d1b] text-slate-400">Sem categoria</option>
+              {categories.map(c => (
+                <option key={c.id} value={c.id} className="bg-[#0b0d1b] text-slate-100 font-medium">
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Observações / Notas */}
+          <div>
+            <label className="block text-sm font-semibold text-slate-400 mb-1.5">Observações / Notas</label>
+            <textarea 
+              value={notes} 
+              onChange={e=>setNotes(e.target.value)} 
+              placeholder="Adicione observações ou detalhes extras sobre este lançamento..."
+              rows={3}
+              className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-slate-100 outline-none focus:border-blue-500/50 placeholder-slate-500 transition-all duration-300 text-sm"
+            />
+          </div>
 
         </div>
 

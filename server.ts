@@ -73,6 +73,51 @@ async function startServer() {
     }
   });
 
+  // Categories
+  app.get("/api/categories", async (req, res) => {
+    try {
+      const { getCategories } = await import("./server/db.js");
+      const categories = await getCategories();
+      res.json(categories);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/categories", async (req, res) => {
+    try {
+      const { name, color, icon } = req.body;
+      const { createCategory } = await import("./server/db.js");
+      const category = await createCategory(name, color, icon);
+      res.json(category);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/categories/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, color, icon } = req.body;
+      const { updateCategory } = await import("./server/db.js");
+      const category = await updateCategory(id, name, color, icon);
+      res.json(category);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/categories/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { deleteCategory } = await import("./server/db.js");
+      await deleteCategory(id);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Transactions
   app.get("/api/transactions/:month", async (req, res) => {
     try {
@@ -111,12 +156,23 @@ async function startServer() {
     }
   });
 
+  app.put("/api/transactions/batch-assign", async (req, res) => {
+    try {
+      const { ids, person_id, category_id } = req.body;
+      const { batchUpdateTransactions } = await import("./server/db.js");
+      await batchUpdateTransactions(ids, person_id, category_id);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.put("/api/transactions/:id/config", async (req, res) => {
     try {
       const { id } = req.params;
-      const { person_id, split_data } = req.body;
+      const { person_id, split_data, category_id, notes } = req.body;
       const { updateTransactionConfig } = await import("./server/db.js");
-      await updateTransactionConfig(id, person_id, split_data);
+      await updateTransactionConfig(id, person_id, split_data, category_id, notes);
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
