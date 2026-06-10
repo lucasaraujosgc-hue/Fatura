@@ -1,0 +1,164 @@
+import express from "express";
+import path from "path";
+import multer from "multer";
+import cors from "cors";
+import fs from "fs";
+import { setupDb } from "./server/db.js";
+import { parseInvoicePDF } from "./server/parser.js";
+import {
+  getPeople,
+  createPerson,
+  deletePerson,
+  updatePerson,
+  getTransactionsForMonth,
+  addManualTransaction,
+  deleteTransaction,
+  importTransactions,
+  getAvailableMonths,
+} from "./server/db.js";
+import { createServer as createViteServer } from "vite";
+
+const upload = multer({ dest: "uploads/" });
+
+async function startServer() {
+  const app = express();
+  const PORT = 3000;
+
+  app.use(cors());
+  app.use(express.json());
+
+  // Initialize DB
+  await setupDb();
+
+  // ----- API Routes -----
+
+  // People
+  app.get("/api/people", async (req, res) => {
+    try {
+      const people = await getPeople();
+      res.json(people);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/people", async (req, res) => {
+    try {
+      const { name, color } = req.body;
+      const person = await createPerson(name, color);
+      res.json(person);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/people/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, color } = req.body;
+      const person = await updatePerson(id, name, color);
+      res.json(person);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/people/:id", async (req, res) => {
+    try {
+      await deletePerson(req.params.id);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Transactions
+  app.get("/api/transactions/:month", async (req, res) => {
+    try {
+      const month = req.params.month; // YYYY-MM
+      const transactions = await getTransactionsForMonth(month);
+      res.json(transactions);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/months", async (req, res) => {
+    try {
+      const months = await getAvailableMonths();
+      res.json(months);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/transactions", async (req, res) => {
+    try {
+      const tx = await addManualTransaction(req.body);
+      res.json(tx);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/transactions/:id", async (req, res) => {
+    try {
+      await deleteTransaction(req.params.id);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // PDF Upload & Extraction
+  app.post("/api/upload", upload.single("pdf"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+      
+      const { invoiceMonth, overwrite } = req.body;
+      if (!invoiceMonth) {
+        return res.status(400).json({ error: "invoiceMonth (YYYY-MM) is required" });
+      }
+
+      console.log(`Extracting data for month ${invoiceMonth}...`);
+      const extractedTransactions = await parseInvoicePDF(req.file.path, invoiceMonth);
+
+      console.log(`Importing ${extractedTransactions.length} transactions for ${invoiceMonth}...`);
+      await importTransactions(invoiceMonth, extractedTransactions, overwrite === "true");
+
+      // Cleanup uploaded file
+      fs.unlinkSync(req.file.path);
+
+      res.json({ success: true, count: extractedTransactions.length });
+    } catch (err: any) {
+      console.error(err);
+      if (req.file) {
+        try { fs.unlinkSync(req.file.path); } catch (e) {}
+      }
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Vite middleware for development
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+startServer().catch(console.error);
