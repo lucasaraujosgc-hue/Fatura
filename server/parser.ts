@@ -1,6 +1,6 @@
 // @ts-ignore
 import pdfParse from "pdf-parse";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import fs from "fs";
 
 export async function parseInvoicePDF(filePath: string, invoiceMonth: string) {
@@ -32,23 +32,11 @@ export async function parseInvoicePDF(filePath: string, invoiceMonth: string) {
   Task: Extract all the individual purchase line items/transactions that are being charged on this bill.
   
   Ignore: payments made (pagamentos efetuados), previous balances, total summary blocks, taxes (IOF, Encargos), or "Compras parceladas - próximas faturas" (future installments section). WE ONLY WANT THE CURRENT CHARGES that make up the "Lançamentos atuais" or "Lançamentos no cartão" for THIS month.
-
-  Return the result as a valid JSON array of objects. 
-  Each object MUST have the following structure:
-  {
-    "date": "YYYY-MM-DD", // Provide a best guess for the year based on the ${invoiceMonth}. E.g. if the line says 15/05 and the invoice month is 2026-06, the date is 2026-05-15.
-    "description": "string", // Keep the raw description. If it has installment info like '01/10', REMOVE the installment info from the description.
-    "amount": number, // The numerical value in Brazilian currency formatting parsed to float. E.g. "1.928,95" -> 1928.95
-    "current_installment": number, // If it's a parcelamento (e.g. 1/10), extract the 1. If it's not a parcelamento, use 1.
-    "total_installments": number  // If it's 1/10, extract the 10. If not, use 1.
-  }
-
-  Do NOT return anything else but the JSON array. Make sure the JSON is valid.
   `;
 
-  // Use Gemini 2.5 Flash to process the text
+  // Use Gemini 3.5 Flash to process the text with a strictly mapped responseSchema to optimize latency and quota
   const response = await ai.models.generateContent({
-    model: "gemini-3.1-pro-preview",
+    model: "gemini-3.5-flash",
     contents: [
       {
         text: prompt + "\n\n=== PDF TEXT ===\n" + text,
@@ -57,6 +45,35 @@ export async function parseInvoicePDF(filePath: string, invoiceMonth: string) {
     config: {
       temperature: 0.1,
       responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            date: { 
+              type: Type.STRING, 
+              description: "YYYY-MM-DD format. Best guess for the year based on ${invoiceMonth}. E.g. raw 15/05 with target month 2026-06 yields 2026-05-15." 
+            },
+            description: { 
+              type: Type.STRING, 
+              description: "The raw vendor description. If it has installment info like '01/10', remove the installment info from this description string." 
+            },
+            amount: { 
+              type: Type.NUMBER, 
+              description: "The parsed numerical value. Convert Portuguese formatting (e.g., '1.928,95' to 1928.95)." 
+            },
+            current_installment: { 
+              type: Type.INTEGER, 
+              description: "Extracted current installment number (integer). Defaults to 1 if not a parcelamento." 
+            },
+            total_installments: { 
+              type: Type.INTEGER, 
+              description: "Extracted total number of installments (integer). Defaults to 1 if not a parcelamento." 
+            }
+          },
+          required: ["date", "description", "amount"]
+        }
+      }
     },
   });
 
