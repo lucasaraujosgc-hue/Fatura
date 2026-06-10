@@ -3,11 +3,28 @@ import pdfParse from "pdf-parse";
 import { GoogleGenAI } from "@google/genai";
 import fs from "fs";
 
+// Robustly resolve the external CommonJS module pdf-parse
+let pdfParserFn: any = pdfParse;
+if (typeof pdfParserFn !== "function" && pdfParserFn && (pdfParserFn as any).default) {
+  pdfParserFn = (pdfParserFn as any).default;
+}
+if (typeof pdfParserFn !== "function") {
+  try {
+    // @ts-ignore
+    pdfParserFn = typeof require !== 'undefined' ? require("pdf-parse") : null;
+  } catch (e) {
+    console.error("Failed to require pdf-parse dynamically:", e);
+  }
+}
+
 export async function parseInvoicePDF(filePath: string, invoiceMonth: string) {
   const dataBuffer = fs.readFileSync(filePath);
   
   // Basic PDF text extraction
-  const data = await pdfParse(dataBuffer);
+  if (typeof pdfParserFn !== "function") {
+    throw new Error("Não foi possível carregar a funcionalidade de leitura de PDF (pdf-parse is not a function). Verifique logs do servidor.");
+  }
+  const data = await pdfParserFn(dataBuffer);
   const text = data.text;
 
   // If we don't have an API key, we throw an error (or fallback to dummy logic if we wanted)
