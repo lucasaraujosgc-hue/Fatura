@@ -110,6 +110,18 @@ async function startServer() {
     }
   });
 
+  app.put("/api/transactions/:id/config", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { person_id, split_data } = req.body;
+      const { updateTransactionConfig } = await import("./server/db.js");
+      await updateTransactionConfig(id, person_id, split_data);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // PDF Upload & Extraction
   app.post("/api/upload", upload.single("pdf"), async (req, res) => {
     try {
@@ -128,7 +140,15 @@ async function startServer() {
       console.log(`Importing ${extractedTransactions.length} transactions for ${invoiceMonth}...`);
       await importTransactions(invoiceMonth, extractedTransactions, overwrite === "true");
 
-      // Cleanup uploaded file
+      // Save PDF to backup directory instead of deleting
+      const dataDir = process.env.DATA_DIR || path.resolve(process.cwd(), "data");
+      const pdfsDir = path.join(dataDir, "pdfs");
+      if (!fs.existsSync(pdfsDir)) {
+        fs.mkdirSync(pdfsDir, { recursive: true });
+      }
+      
+      const targetPath = path.join(pdfsDir, `${invoiceMonth}-${req.file.originalname}`);
+      fs.copyFileSync(req.file.path, targetPath);
       fs.unlinkSync(req.file.path);
 
       res.json({ success: true, count: extractedTransactions.length });

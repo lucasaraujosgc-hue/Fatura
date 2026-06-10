@@ -7,7 +7,9 @@ import fs from "fs";
 let db: Database;
 
 export async function setupDb() {
-  const dbPath = path.resolve(process.cwd(), "data");
+  const dataDir = process.env.DATA_DIR || path.resolve(process.cwd(), "data");
+  const dbPath = path.resolve(dataDir);
+  
   if (!fs.existsSync(dbPath)) {
     fs.mkdirSync(dbPath, { recursive: true });
   }
@@ -37,6 +39,12 @@ export async function setupDb() {
       FOREIGN KEY (person_id) REFERENCES people(id)
     );
   `);
+
+  try {
+    await db.exec(`ALTER TABLE transactions ADD COLUMN split_data TEXT;`);
+  } catch (e) {
+    // Ignore if column already exists
+  }
 }
 
 export async function getPeople() {
@@ -137,6 +145,13 @@ export async function addManualTransaction(data: any) {
 
 export async function deleteTransaction(id: string) {
   await db.run("DELETE FROM transactions WHERE id = ?", [id]);
+}
+
+export async function updateTransactionConfig(id: string, person_id: string | null, split_data: any | null) {
+  await db.run(
+    "UPDATE transactions SET person_id = ?, split_data = ? WHERE id = ?",
+    [person_id, split_data ? JSON.stringify(split_data) : null, id]
+  );
 }
 
 export async function importTransactions(month: string, extractedTx: any[], overwrite: boolean) {

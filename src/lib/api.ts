@@ -44,6 +44,15 @@ export async function deleteTransaction(id: string) {
   await fetch(`${API_BASE}/transactions/${id}`, { method: "DELETE" });
 }
 
+export async function updateTransactionConfig(id: string, person_id: string | null, split_data: any | null) {
+  const res = await fetch(`${API_BASE}/transactions/${id}/config`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ person_id, split_data }),
+  });
+  return res.json();
+}
+
 export async function uploadInvoice(file: File, month: string, overwrite: boolean) {
   const formData = new FormData();
   formData.append("pdf", file);

@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { formatCurrency, formatMonth } from "../lib/utils";
 import { fetchTransactions, deleteTransaction, fetchPeople } from "../lib/api";
-import { Trash2, TrendingUp, Users, Tag } from "lucide-react";
+import { Trash2, TrendingUp, Users, Tag, Edit2 } from "lucide-react";
+import { TransactionEditModal } from "./TransactionEditModal";
 
 export function Dashboard({ currentMonth, peopleMap }: { currentMonth: string, peopleMap: Record<string, any> }) {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editingTx, setEditingTx] = useState<any | null>(null);
 
-  useEffect(() => {
+  const loadTxs = () => {
     if (!currentMonth) return;
     setLoading(true);
     fetchTransactions(currentMonth)
@@ -16,6 +18,10 @@ export function Dashboard({ currentMonth, peopleMap }: { currentMonth: string, p
       })
       .catch(console.error)
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadTxs();
   }, [currentMonth]);
 
   const handleDelete = async (id: string, isProjected: boolean) => {
@@ -33,9 +39,23 @@ export function Dashboard({ currentMonth, peopleMap }: { currentMonth: string, p
 
   // Group by person
   const byPerson = transactions.reduce((acc: Record<string, number>, tx) => {
-    const pId = tx.person_id || 'none';
-    if (!acc[pId]) acc[pId] = 0;
-    acc[pId] += Number(tx.amount);
+    let splits = [];
+    if (tx.split_data) {
+       try { splits = JSON.parse(tx.split_data); } catch(e) {}
+    }
+
+    if (splits.length > 0) {
+      for (const split of splits) {
+        const pId = split.person_id || 'none';
+        if (!acc[pId]) acc[pId] = 0;
+        acc[pId] += Number(split.amount) || 0;
+      }
+    } else {
+      const pId = tx.person_id || 'none';
+      if (!acc[pId]) acc[pId] = 0;
+      acc[pId] += Number(tx.amount);
+    }
+
     return acc;
   }, {});
 
@@ -45,6 +65,18 @@ export function Dashboard({ currentMonth, peopleMap }: { currentMonth: string, p
 
   return (
     <div className="space-y-6">
+      {editingTx && (
+        <TransactionEditModal 
+          transaction={editingTx} 
+          people={Object.values(peopleMap)}
+          onClose={() => setEditingTx(null)}
+          onSave={() => {
+            setEditingTx(null);
+            loadTxs();
+          }}
+        />
+      )}
+
       {/* Stats row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between">
@@ -128,26 +160,63 @@ export function Dashboard({ currentMonth, peopleMap }: { currentMonth: string, p
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        {person ? (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium border" style={{ borderColor: person.color, color: person.color }}>
-                            <Tag size={12} />
-                            {person.name}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-gray-400">-</span>
-                        )}
+                        {(() => {
+                          let splits = [];
+                          if (tx.split_data) {
+                            try { splits = JSON.parse(tx.split_data); } catch(e) {}
+                          }
+                          if (splits.length > 0) {
+                            return (
+                              <div className="flex flex-col gap-1">
+                                {splits.map((s: any, idx: number) => {
+                                  const p = peopleMap[s.person_id];
+                                  return (
+                                    <span key={idx} className="inline-flex items-center gap-1 text-xs text-gray-600">
+                                      {p ? (
+                                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: p.color }}></span>
+                                      ) : <span className="w-2 h-2 rounded-full bg-gray-300"></span>}
+                                      {p ? p.name : "Ninguém"} ({formatCurrency(s.amount)})
+                                    </span>
+                                  )
+                                })}
+                              </div>
+                            )
+                          }
+                          
+                          if (person) {
+                            return (
+                              <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium border" style={{ borderColor: person.color, color: person.color }}>
+                                <Tag size={12} />
+                                {person.name}
+                              </span>
+                            )
+                          }
+                          
+                          return <span className="text-xs text-gray-400">-</span>;
+                        })()}
                       </td>
                       <td className="px-6 py-4 text-right font-semibold text-gray-900">
                         {formatCurrency(tx.amount)}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <button 
-                          onClick={() => handleDelete(tx.id, isProjected)}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Excluir Lançamento"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          {!isProjected && (
+                            <button 
+                              onClick={() => setEditingTx(tx)}
+                              className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="Editar Responsável"
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                          )}
+                          <button 
+                            onClick={() => handleDelete(tx.id, isProjected)}
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Excluir Lançamento"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )

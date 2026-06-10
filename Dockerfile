@@ -14,6 +14,10 @@ COPY . .
 # Build application
 RUN npm run build
 
+# Volume for data persistence and set default data dir
+ENV DATA_DIR=/backup
+VOLUME /backup
+
 # Expose port
 EXPOSE 3000
 
