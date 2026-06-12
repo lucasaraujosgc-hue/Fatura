@@ -205,12 +205,13 @@ export function ManualTransactionForm({
         notes: notes || null
       });
       onSuccess();
+      alert(`Lançamento manual adicionado com sucesso a partir de ${formatMonth(startMonth)}!`);
       setDesc(""); setAmount(""); setInst("1"); setPersonId(""); setCategoryId(""); 
       setNotes(""); setShowNotes(false);
       setTransactionDate(new Date().toISOString().split('T')[0]);
       setStartMonth(currentMonth);
     } catch (err) {
-      alert("Erro ao salvar.");
+      alert("Erro ao salvar lançamento manual.");
     } finally {
       setLoading(false);
     }

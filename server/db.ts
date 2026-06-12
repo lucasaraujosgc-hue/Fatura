@@ -198,25 +198,48 @@ export async function getTransactionsForMonth(month: string) {
 
 export async function addManualTransaction(data: any) {
   const { billed_month, original_date, description, amount, current_installment, total_installment, person_id, category_id, notes } = data;
-  const id = uuidv4();
-  await db.run(`
-    INSERT INTO transactions 
-    (id, billed_month, original_date, description, amount, current_installment, total_installment, person_id, is_imported, category_id, notes) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
-  `, [
-    id, 
-    billed_month, 
-    original_date, 
-    description, 
-    amount, 
-    current_installment || 1, 
-    total_installment || 1, 
-    person_id || null,
-    category_id || null,
-    notes || null
-  ]);
   
-  return await db.get("SELECT * FROM transactions WHERE id = ?", [id]);
+  const current = current_installment || 1;
+  const total = total_installment || 1;
+  
+  const [startYearStr, startMonthStr] = billed_month.split('-');
+  let currY = parseInt(startYearStr);
+  let currM = parseInt(startMonthStr);
+
+  const insertedIds = [];
+
+  for (let i = current; i <= total; i++) {
+    const id = uuidv4();
+    const currentBilledMonth = `${currY}-${currM.toString().padStart(2, '0')}`;
+    
+    await db.run(`
+      INSERT INTO transactions 
+      (id, billed_month, original_date, description, amount, current_installment, total_installment, person_id, is_imported, category_id, notes) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+    `, [
+      id, 
+      currentBilledMonth, 
+      original_date, 
+      description, 
+      amount, 
+      i, 
+      total, 
+      person_id || null,
+      category_id || null,
+      notes || null
+    ]);
+    insertedIds.push(id);
+
+    // increment month
+    currM++;
+    if (currM > 12) {
+      currM = 1;
+      currY++;
+    }
+  }
+
+  // Return the first one as representative
+  return await db.get("SELECT * FROM transactions WHERE id = ?", [insertedIds[0]]);
 }
 
 export async function deleteTransaction(id: string) {
