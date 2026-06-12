@@ -178,6 +178,12 @@ export function ManualTransactionForm({
   const [notes, setNotes] = useState("");
   const [showNotes, setShowNotes] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [transactionDate, setTransactionDate] = useState(new Date().toISOString().split('T')[0]);
+  const [startMonth, setStartMonth] = useState(currentMonth);
+
+  React.useEffect(() => {
+    setStartMonth(currentMonth);
+  }, [currentMonth]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -188,8 +194,8 @@ export function ManualTransactionForm({
       const total = parts.length > 1 ? parseInt(parts[1]) : parseInt(installments);
 
       await createTransaction({
-        billed_month: currentMonth,
-        original_date: new Date().toISOString().split('T')[0],
+        billed_month: startMonth,
+        original_date: transactionDate,
         description,
         amount: parseFloat(amount.replace(',', '.')),
         current_installment: current || 1,
@@ -199,12 +205,35 @@ export function ManualTransactionForm({
         notes: notes || null
       });
       onSuccess();
-      setDesc(""); setAmount(""); setInst("1"); setPersonId(""); setCategoryId(""); setNotes(""); setShowNotes(false);
+      setDesc(""); setAmount(""); setInst("1"); setPersonId(""); setCategoryId(""); 
+      setNotes(""); setShowNotes(false);
+      setTransactionDate(new Date().toISOString().split('T')[0]);
+      setStartMonth(currentMonth);
     } catch (err) {
       alert("Erro ao salvar.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const generateMonths = () => {
+    const list = [];
+    if (!currentMonth) return [];
+    const [y, m] = currentMonth.split('-').map(Number);
+    let currY = y, currM = m - 1;
+    if (currM < 1) { currM = 12; currY--; }
+    for (let i = 0; i < 12; i++) {
+      list.push(`${currY}-${currM.toString().padStart(2, '0')}`);
+      currM++;
+      if (currM > 12) { currM = 1; currY++; }
+    }
+    return list;
+  };
+
+  const formatMonth = (iso: string) => {
+    const d = new Date(iso + "-01T12:00:00");
+    const text = d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+    return text.charAt(0).toUpperCase() + text.slice(1);
   };
 
   return (
@@ -250,6 +279,34 @@ export function ManualTransactionForm({
             />
           </div>
         </div>
+        
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-400 mb-1">Data da Compra</label>
+            <input 
+              required 
+              value={transactionDate} 
+              onChange={e=>setTransactionDate(e.target.value)} 
+              type="date" 
+              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-slate-100 outline-none focus:border-blue-500/60 transition-all duration-300 text-sm [color-scheme:dark]" 
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-400 mb-1">Início do Desconto (Mês Fatura)</label>
+            <select 
+              value={startMonth} 
+              onChange={e=>setStartMonth(e.target.value)} 
+              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-slate-100 outline-none focus:border-blue-500/60 transition-all duration-300 text-sm"
+            >
+              {generateMonths().map(m => (
+                <option key={m} value={m} className="bg-[#0b0d1b] text-slate-100 font-medium">
+                  {formatMonth(m)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-slate-400 mb-1">Responsável</label>
