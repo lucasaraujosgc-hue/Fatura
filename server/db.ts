@@ -183,8 +183,20 @@ export async function getTransactionsForMonth(month: string) {
     }
   }
 
-  // Always combine explicit tx with projected tx.
-  return [...explicitTx, ...projectedTx];
+  // Deduplicate projected transactions. 
+  // If an explicit transaction (imported or manual) already exists for this exact installment (same date, amount, description), we drop the projected one.
+  const safeProjected = projectedTx.filter(ptx => {
+    return !explicitTx.some(etx => {
+      // Allow minor variations in amount due to parsing
+      const sameAmount = Math.abs(etx.amount - ptx.amount) <= 0.05;
+      const sameDate = etx.original_date === ptx.original_date;
+      // We can also check if the descriptions are somewhat similar or if current_installment matches, 
+      // but same date and amount is usually a strong enough heuristic for the exact same purchase.
+      return sameAmount && sameDate;
+    });
+  });
+
+  return [...explicitTx, ...safeProjected];
 }
 
 export async function addManualTransaction(data: any) {
