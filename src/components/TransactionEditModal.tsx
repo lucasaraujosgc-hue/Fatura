@@ -44,6 +44,12 @@ export function TransactionEditModal({
 
   const handleUpdateSplit = (idx: number, field: string, val: string) => {
     const newSplits = [...splits];
+    if (field === 'amount' && val.endsWith('%')) {
+      const percentage = parseFloat(val.replace('%', '').replace(',', '.'));
+      if (!isNaN(percentage)) {
+         val = ((transaction.amount * percentage) / 100).toFixed(2);
+      }
+    }
     newSplits[idx] = { ...newSplits[idx], [field]: val };
     setSplits(newSplits);
   };
@@ -151,12 +157,12 @@ export function TransactionEditModal({
                       ))}
                     </select>
                   </div>
-                  <div className="w-24">
-                    <label className="block text-xs font-semibold text-slate-400 mb-1.5">Valor (R$)</label>
+                  <div className="w-28">
+                    <label className="block text-xs font-semibold text-slate-400 mb-1.5">Valor (R$ ou %)</label>
                     <input 
                       type="text" 
                       value={split.amount}
-                      placeholder="0.00"
+                      placeholder="0.00 ou 50%"
                       onChange={e=>handleUpdateSplit(idx, 'amount', e.target.value)}
                       className="w-full px-2 py-2 bg-white/5 border border-white/10 rounded-xl text-slate-100 outline-none focus:border-blue-500/50 text-sm"
                     />

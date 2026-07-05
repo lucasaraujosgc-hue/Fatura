@@ -139,7 +139,9 @@ export function UploadForm({ currentMonth, onUploadSuccess }: { currentMonth: st
                 <div key={c.conflictId} className="bg-slate-950/60 border border-white/5 p-4 rounded-xl space-y-3">
                    <div className="flex flex-col sm:flex-row gap-4 divide-y sm:divide-y-0 sm:divide-x divide-white/10">
                       <div className="flex-1 space-y-1">
-                          <p className="text-xs uppercase tracking-wider font-bold text-slate-500">Já Existente</p>
+                          <p className="text-xs uppercase tracking-wider font-bold text-slate-500">
+                            {c.existing.is_projected ? 'Parcelamento (Mês Anterior)' : 'Já Existente'}
+                          </p>
                           <p className="text-sm font-semibold text-slate-200">{c.existing.description}</p>
                           <p className="text-xs text-slate-400 font-mono">{c.existing.original_date} • R$ {c.existing.amount.toFixed(2)}</p>
                       </div>
@@ -155,14 +157,14 @@ export function UploadForm({ currentMonth, onUploadSuccess }: { currentMonth: st
                          onClick={() => setResolutions(prev => ({...prev, [c.conflictId]: 'ignore'}))}
                          className={`flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-all ${resolutions[c.conflictId] === 'ignore' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-white/5 text-slate-400 border border-transparent hover:bg-white/10'}`}
                       >
-                         Ignorar (Manter o Existente)
+                         {c.existing.is_projected ? 'Manter Configurações Antigas' : 'Ignorar (Manter o Existente)'}
                       </button>
                       <button 
                          type="button" 
                          onClick={() => setResolutions(prev => ({...prev, [c.conflictId]: 'replace'}))}
                          className={`flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-all ${resolutions[c.conflictId] === 'replace' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-white/5 text-slate-400 border border-transparent hover:bg-white/10'}`}
                       >
-                         Substituir pelo da Fatura
+                         {c.existing.is_projected ? 'Substituir (Usar Cru do PDF)' : 'Substituir pelo da Fatura'}
                       </button>
                    </div>
                 </div>

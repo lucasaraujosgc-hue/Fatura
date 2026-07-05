@@ -296,6 +296,10 @@ export async function batchUpdateTransactions(ids: string[], person_id?: string 
   }
 }
 
+export async function getAllTransactions() {
+  return await db.all("SELECT * FROM transactions ORDER BY billed_month DESC");
+}
+
 export async function importTransactions(month: string, extractedTx: any[], overwrite: boolean) {
   if (overwrite) {
     await db.run("DELETE FROM transactions WHERE billed_month = ? AND is_imported = 1", [month]);

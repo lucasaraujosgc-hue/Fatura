@@ -247,13 +247,31 @@ async function startServer() {
       let extractedTransactions = await parseInvoicePDF(req.file.path, invoiceMonth);
 
       // Check for conflicts
-      const { getTransactionsForMonth, deleteTransaction, importTransactions } = await import("./server/db.js");
+      const { getTransactionsForMonth, deleteTransaction, importTransactions, getAllTransactions } = await import("./server/db.js");
       const existingTxs = await getTransactionsForMonth(invoiceMonth);
+
+      // Fetch all transactions to learn historical category/person associations
+      const allTxs = await getAllTransactions();
+      const knowledge: Record<string, any> = {};
+      
+      // Sort oldest to newest so newest associations take precedence
+      allTxs.sort((a, b) => a.billed_month.localeCompare(b.billed_month));
+      for (const tx of allTxs) {
+        if (!tx.is_projected && tx.description) {
+           knowledge[tx.description.trim().toLowerCase()] = {
+             category_id: tx.category_id,
+             person_id: tx.person_id,
+             split_data: tx.split_data,
+             notes: tx.notes
+           };
+        }
+      }
 
       // Separate explicit existing into manual and imported
       const explicitExisting = existingTxs.filter((tx: any) => !tx.is_projected);
       const manualExisting = explicitExisting.filter((tx: any) => tx.is_imported === 0);
       const importedExisting = explicitExisting.filter((tx: any) => tx.is_imported === 1);
+      const projectedExisting = existingTxs.filter((tx: any) => tx.is_projected);
       
       // If overwrite is false, prevent upload if imported data already exists
       if (overwrite !== "true" && importedExisting.length > 0) {
@@ -275,6 +293,17 @@ async function startServer() {
       for (let i = 0; i < extractedTransactions.length; i++) {
         const extTx = extractedTransactions[i];
         
+        // 1. Learn from history based on description matching
+        const matchKey = extTx.description.trim().toLowerCase();
+        const learned = knowledge[matchKey];
+        if (learned) {
+            extTx.category_id = learned.category_id;
+            extTx.person_id = learned.person_id;
+            extTx.split_data = learned.split_data;
+            extTx.notes = learned.notes;
+        }
+
+        // 2. Overwrite from exactly matching previous imported transaction in SAME month (takes precedence if they tweaked the split on this specific month)
         if (overwrite === "true") {
            // Auto-match with old imported transactions to preserve categories
            const oldMatched = importedExisting.find((old: any) => 
@@ -289,8 +318,12 @@ async function startServer() {
            }
         }
         
-        // Find if there's a conflict ONLY with manual transactions
+        // Find if there's a conflict with manual OR projected transactions
         const conflict = manualExisting.find((ex: any) => {
+           const sameDate = ex.original_date === extTx.date;
+           const amountDiff = Math.abs(ex.amount - extTx.amount);
+           return sameDate && amountDiff <= 0.05;
+        }) || projectedExisting.find((ex: any) => {
            const sameDate = ex.original_date === extTx.date;
            const amountDiff = Math.abs(ex.amount - extTx.amount);
            return sameDate && amountDiff <= 0.05;
@@ -305,14 +338,26 @@ async function startServer() {
                  extracted: extTx,
                  existing: conflict
               });
-              txsToImport.push(extTx);
            } else {
               const resValue = parsedResolutions[conflictId];
               if (resValue === 'replace') {
                  txsToImport.push(extTx);
-                 await deleteTransaction(conflict.id);
+                 if (!conflict.is_projected) {
+                     await deleteTransaction(conflict.id);
+                 }
               } else if (resValue === 'ignore') {
-                 // skip
+                 if (conflict.is_projected) {
+                     // For projected: "Manter" means keep the previous month's configuration (person, category, splits)
+                     extTx.category_id = conflict.category_id;
+                     extTx.person_id = conflict.person_id;
+                     extTx.split_data = conflict.split_data;
+                     extTx.notes = conflict.notes;
+                     extTx.current_installment = conflict.current_installment;
+                     extTx.total_installment = conflict.total_installment;
+                     txsToImport.push(extTx);
+                 } else {
+                     // skip manual conflict
+                 }
               }
            }
         } else {
