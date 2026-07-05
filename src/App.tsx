@@ -3,7 +3,8 @@ import { fetchPeople, fetchMonths, fetchCategories } from './lib/api';
 import { Dashboard } from './components/Dashboard';
 import { UploadForm, ManualTransactionForm, PeopleManager, CategoryManager } from './components/Forms';
 import { CategoryChart } from './components/CategoryChart';
-import { CreditCard, Calendar } from 'lucide-react';
+import { ImportedInvoicesModal } from './components/ImportedInvoicesModal';
+import { CreditCard, Calendar, FileBox } from 'lucide-react';
 
 export default function App() {
   const [people, setPeople] = useState<any[]>([]);
@@ -11,6 +12,7 @@ export default function App() {
   const [months, setMonths] = useState<string[]>([]);
   const [currentMonth, setCurrentMonth] = useState<string>("");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const loadData = async () => {
     try {
@@ -58,10 +60,18 @@ export default function App() {
               <CreditCard size={20} />
             </div>
             <div>
-              <h1 className="text-xl font-display font-bold tracking-tight bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent">
-                FaturaX
-              </h1>
-              <p className="text-xs text-slate-400 font-medium">Controle de Fatura Compartilhada</p>
+              <div className="flex items-center gap-3">
+                <h1 className="text-xl font-display font-bold tracking-tight bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent">
+                  FaturaX
+                </h1>
+                <button
+                  onClick={() => setIsModalOpen(true)}
+                  className="px-2.5 py-1 bg-white/5 border border-white/10 rounded-lg text-xs font-semibold text-slate-300 hover:text-white hover:bg-white/10 transition-colors flex items-center gap-1.5"
+                >
+                  <FileBox size={14} /> Faturas
+                </button>
+              </div>
+              <p className="text-xs text-slate-400 font-medium mt-0.5">Controle de Fatura Compartilhada</p>
             </div>
           </div>
           
@@ -195,6 +205,12 @@ export default function App() {
 
         </div>
       </main>
+
+      <ImportedInvoicesModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        onUpdate={triggerRefresh} 
+      />
     </div>
   );
 }

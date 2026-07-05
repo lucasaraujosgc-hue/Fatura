@@ -10,13 +10,39 @@ export function UploadForm({ currentMonth, onUploadSuccess }: { currentMonth: st
   const [conflicts, setConflicts] = useState<any[]>([]);
   const [resolutions, setResolutions] = useState<Record<string, string>>({});
   const [lastOverwrite, setLastOverwrite] = useState(false);
+  const [targetMonth, setTargetMonth] = useState(currentMonth);
+
+  React.useEffect(() => {
+    setTargetMonth(currentMonth);
+  }, [currentMonth]);
+
+  const generateMonths = () => {
+    const list = [];
+    if (!currentMonth) return [];
+    const [y, m] = currentMonth.split('-').map(Number);
+    let currY = y, currM = m - 2;
+    if (currM < 1) { currM += 12; currY--; }
+    if (currM < 1) { currM += 12; currY--; }
+    for (let i = 0; i < 12; i++) {
+      list.push(`${currY}-${currM.toString().padStart(2, '0')}`);
+      currM++;
+      if (currM > 12) { currM = 1; currY++; }
+    }
+    return list;
+  };
+
+  const formatMonthText = (iso: string) => {
+    const d = new Date(iso + "-01T12:00:00");
+    const text = d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  };
 
   const performUpload = async (overwrite: boolean, resData?: Record<string, string>) => {
     if (!file) return;
     setLoading(true);
     setError("");
     try {
-      const resp = await uploadInvoice(file, currentMonth, overwrite, resData);
+      const resp = await uploadInvoice(file, targetMonth, overwrite, resData);
       if (resp.requireResolution) {
         setConflicts(resp.conflicts);
         const initialRes: Record<string, string> = {};
@@ -27,7 +53,7 @@ export function UploadForm({ currentMonth, onUploadSuccess }: { currentMonth: st
         onUploadSuccess();
         setFile(null);
         setConflicts([]);
-        alert(`Fatura importada com sucesso! ${resp.count} lançamentos.`);
+        alert(`Fatura importada com sucesso para ${formatMonthText(targetMonth)}! (${resp.count} lançamentos.)`);
       }
     } catch (err: any) {
       setError(err.message);
@@ -40,7 +66,7 @@ export function UploadForm({ currentMonth, onUploadSuccess }: { currentMonth: st
     e.preventDefault();
     if (!file) return;
 
-    if (!confirm(`Deseja importar a fatura para o mês referencial ${currentMonth}?\nIsso processará o PDF usando IA e pode demorar alguns segundos.`)) {
+    if (!confirm(`Deseja importar a fatura para o mês referencial ${formatMonthText(targetMonth)}?\nIsso processará o PDF usando IA e pode demorar alguns segundos.`)) {
       return;
     }
 
@@ -61,6 +87,18 @@ export function UploadForm({ currentMonth, onUploadSuccess }: { currentMonth: st
       </h3>
       <div className="space-y-4">
         <div>
+          <label className="block text-sm font-medium text-slate-400 mb-1.5">Mês da Fatura</label>
+          <select 
+            value={targetMonth} 
+            onChange={e => setTargetMonth(e.target.value)} 
+            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-slate-100 outline-none focus:border-blue-500/60 transition-all duration-300 text-sm mb-3"
+          >
+            {generateMonths().map(m => (
+              <option key={m} value={m} className="bg-[#0b0d1b] text-slate-100 font-medium">
+                {formatMonthText(m)}
+              </option>
+            ))}
+          </select>
           <label className="block text-sm font-medium text-slate-400 mb-1.5">Arquivo PDF da Fatura</label>
           <input 
             type="file" 
@@ -80,7 +118,6 @@ export function UploadForm({ currentMonth, onUploadSuccess }: { currentMonth: st
         >
           {loading ? "Processando e Importando..." : "Enviar PDF"}
         </button>
-        <p className="text-xs text-slate-400 text-center">Mês selecionado: <span className="font-mono text-blue-400 font-medium">{currentMonth}</span></p>
       </div>
     </form>
 

@@ -249,6 +249,11 @@ export async function deleteTransaction(id: string) {
   await db.run("DELETE FROM transactions WHERE id = ?", [id]);
 }
 
+export async function deleteImportedInvoice(month: string) {
+  // Delete all imported transactions for this month
+  await db.run("DELETE FROM transactions WHERE billed_month = ? AND is_imported = 1", [month]);
+}
+
 export async function updateTransactionConfig(
   id: string,
   person_id: string | null,

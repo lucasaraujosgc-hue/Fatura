@@ -138,6 +138,58 @@ async function startServer() {
     }
   });
 
+  app.get("/api/invoices", async (req, res) => {
+    try {
+      const dataDir = process.env.DATA_DIR || path.resolve(process.cwd(), "data");
+      const pdfsDir = path.join(dataDir, "pdfs");
+      if (!fs.existsSync(pdfsDir)) {
+        return res.json([]);
+      }
+      
+      const files = fs.readdirSync(pdfsDir);
+      const invoices = files.map(file => {
+        // file format: "YYYY-MM-original_name.pdf"
+        const match = file.match(/^(\d{4}-\d{2})-(.+)$/);
+        if (match) {
+           return { month: match[1], filename: match[2], fullPath: file };
+        }
+        return { month: "Unknown", filename: file, fullPath: file };
+      });
+      
+      // sort by month desc
+      invoices.sort((a, b) => b.month.localeCompare(a.month));
+      res.json(invoices);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/invoices/:month", async (req, res) => {
+    try {
+      const { month } = req.params;
+      
+      // 1. Delete from DB
+      const { deleteImportedInvoice } = await import("./server/db.js");
+      await deleteImportedInvoice(month);
+      
+      // 2. Delete PDF
+      const dataDir = process.env.DATA_DIR || path.resolve(process.cwd(), "data");
+      const pdfsDir = path.join(dataDir, "pdfs");
+      if (fs.existsSync(pdfsDir)) {
+        const files = fs.readdirSync(pdfsDir);
+        for (const file of files) {
+           if (file.startsWith(`${month}-`)) {
+             fs.unlinkSync(path.join(pdfsDir, file));
+           }
+        }
+      }
+      
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/transactions", async (req, res) => {
     try {
       const tx = await addManualTransaction(req.body);
@@ -299,6 +351,57 @@ async function startServer() {
       console.error(err);
       if (req.file) {
         try { fs.unlinkSync(req.file.path); } catch (e) {}
+      }
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/chat", upload.single("file"), async (req, res) => {
+    try {
+      const { message } = req.body;
+      
+      let fileText = "";
+      if (req.file) {
+        if (req.file.mimetype === "application/pdf") {
+          const pdfParse = (await import("pdf-parse")).default;
+          const pdfParserClass = (pdfParse as any).PDFParse;
+          if (pdfParserClass) {
+            const dataBuffer = fs.readFileSync(req.file.path);
+            const parserInstance = new pdfParserClass({ data: dataBuffer });
+            const textResult = await parserInstance.getText();
+            fileText = textResult.text;
+            await parserInstance.destroy();
+          }
+        }
+        try { fs.unlinkSync(req.file.path); } catch (e) {}
+      }
+
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(500).json({ reply: "GEMINI_API_KEY environment variable is missing." });
+      }
+
+      const { GoogleGenAI } = await import("@google/genai");
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      
+      let promptText = message || "";
+      if (fileText) {
+         promptText += "\n\n=== CONTEÚDO DO ARQUIVO ===\n" + fileText.substring(0, 15000); // limit to 15k chars for safety
+      }
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: promptText,
+        config: {
+          systemInstruction: "Você é um assistente financeiro do FaturaX. Seu papel é ajudar o usuário a analisar faturas e corrigir lançamentos. Seja conciso, direto e amigável.",
+          temperature: 0.7,
+        }
+      });
+
+      res.json({ reply: response.text });
+    } catch (err: any) {
+      console.error(err);
+      if (req.file) {
+        try { fs.unlinkSync(req.file.path); } catch(e) {}
       }
       res.status(500).json({ error: err.message });
     }
