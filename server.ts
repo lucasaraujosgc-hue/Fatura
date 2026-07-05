@@ -195,13 +195,20 @@ async function startServer() {
       let extractedTransactions = await parseInvoicePDF(req.file.path, invoiceMonth);
 
       // Check for conflicts
-      const { getTransactionsForMonth } = await import("./server/db.js");
+      const { getTransactionsForMonth, deleteTransaction, importTransactions } = await import("./server/db.js");
       const existingTxs = await getTransactionsForMonth(invoiceMonth);
 
-      // We only care about explicit ones, actually getTransactionsForMonth returns projected ones too if no imports yet.
-      // Filter out projected ones for the conflict check
+      // Separate explicit existing into manual and imported
       const explicitExisting = existingTxs.filter((tx: any) => !tx.is_projected);
+      const manualExisting = explicitExisting.filter((tx: any) => tx.is_imported === 0);
+      const importedExisting = explicitExisting.filter((tx: any) => tx.is_imported === 1);
       
+      // If overwrite is false, prevent upload if imported data already exists
+      if (overwrite !== "true" && importedExisting.length > 0) {
+         try { fs.unlinkSync(req.file.path); } catch(e) {}
+         return res.status(400).json({ error: "Este mês já possui dados importados. Marque a opção de sobrescrever para atualizar a fatura." });
+      }
+
       let conflicts: any[] = [];
       let parsedResolutions: Record<string, string> = {};
       
@@ -216,15 +223,28 @@ async function startServer() {
       for (let i = 0; i < extractedTransactions.length; i++) {
         const extTx = extractedTransactions[i];
         
-        // Find if there's a conflict
-        const conflict = explicitExisting.find((ex: any) => {
+        if (overwrite === "true") {
+           // Auto-match with old imported transactions to preserve categories
+           const oldMatched = importedExisting.find((old: any) => 
+               old.original_date === extTx.date && 
+               Math.abs(old.amount - extTx.amount) <= 0.05
+           );
+           if (oldMatched) {
+               extTx.category_id = oldMatched.category_id;
+               extTx.person_id = oldMatched.person_id;
+               extTx.split_data = oldMatched.split_data;
+               extTx.notes = oldMatched.notes;
+           }
+        }
+        
+        // Find if there's a conflict ONLY with manual transactions
+        const conflict = manualExisting.find((ex: any) => {
            const sameDate = ex.original_date === extTx.date;
            const amountDiff = Math.abs(ex.amount - extTx.amount);
            return sameDate && amountDiff <= 0.05;
         });
 
         if (conflict) {
-           // We assign an index-based ID for resolution tracking
            const conflictId = `conflict_${i}`;
            
            if (!parsedResolutions[conflictId]) {
@@ -233,17 +253,14 @@ async function startServer() {
                  extracted: extTx,
                  existing: conflict
               });
-              txsToImport.push(extTx); // temporarily keep it, will be handled later
+              txsToImport.push(extTx);
            } else {
               const resValue = parsedResolutions[conflictId];
               if (resValue === 'replace') {
-                 // The user wants to replace the existing one with the extracted one.
-                 // We need to keep extracted one, and delete the existing one.
                  txsToImport.push(extTx);
                  await deleteTransaction(conflict.id);
               } else if (resValue === 'ignore') {
-                 // User wants to ignore the extracted one. Don't push to txsToImport.
-                 // Keep the existing one.
+                 // skip
               }
            }
         } else {

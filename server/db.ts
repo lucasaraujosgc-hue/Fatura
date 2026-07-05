@@ -183,16 +183,7 @@ export async function getTransactionsForMonth(month: string) {
     }
   }
 
-  // If this month HAS imported transactions, we ignore the projected ones from earlier months.
-  // Because the actual PDF represents reality.
-  // Exception: Manual transactions are always kept.
-  const hasImportedTx = explicitTx.some((tx) => tx.is_imported === 1);
-  
-  if (hasImportedTx) {
-    return explicitTx;
-  }
-
-  // If there are no imported transactions for this month, combine manual tx with projected tx.
+  // Always combine explicit tx with projected tx.
   return [...explicitTx, ...projectedTx];
 }
 
@@ -301,8 +292,8 @@ export async function importTransactions(month: string, extractedTx: any[], over
 
   const stmt = await db.prepare(`
     INSERT INTO transactions 
-    (id, billed_month, original_date, description, amount, current_installment, total_installment, is_imported) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+    (id, billed_month, original_date, description, amount, current_installment, total_installment, is_imported, category_id, person_id, split_data, notes) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
   `);
 
   for (const tx of extractedTx) {
@@ -313,7 +304,11 @@ export async function importTransactions(month: string, extractedTx: any[], over
       tx.description,
       tx.amount,
       tx.current_installment,
-      tx.total_installments
+      tx.total_installments,
+      tx.category_id || null,
+      tx.person_id || null,
+      tx.split_data || null,
+      tx.notes || null
     ]);
   }
   await stmt.finalize();
