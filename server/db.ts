@@ -185,11 +185,24 @@ export async function getTransactionsForMonth(month: string) {
 
   // Deduplicate projected transactions. 
   // If an explicit transaction (imported or manual) already exists for this exact installment (same date, amount, description), we drop the projected one.
+  const getDDMM = (d: string) => {
+     if (!d) return "";
+     if (d.includes("-")) {
+        const parts = d.split("-");
+        if (parts[0].length === 4) return `${parts[2]}/${parts[1]}`;
+     }
+     if (d.includes("/")) {
+        const parts = d.split("/");
+        if (parts[0].length === 2) return `${parts[0]}/${parts[1]}`;
+     }
+     return d.substring(0, 5);
+  };
+
   const safeProjected = projectedTx.filter(ptx => {
     return !explicitTx.some(etx => {
       // Allow minor variations in amount due to parsing
       const sameAmount = Math.abs(etx.amount - ptx.amount) <= 0.05;
-      const sameDate = etx.original_date === ptx.original_date;
+      const sameDate = getDDMM(etx.original_date) === getDDMM(ptx.original_date);
       // We can also check if the descriptions are somewhat similar or if current_installment matches, 
       // but same date and amount is usually a strong enough heuristic for the exact same purchase.
       return sameAmount && sameDate;

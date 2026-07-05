@@ -1,5 +1,5 @@
 // @ts-ignore
-import pdfParse from "pdf-parse";
+import * as pdfParse from "pdf-parse";
 import { GoogleGenAI, Type } from "@google/genai";
 import fs from "fs";
 

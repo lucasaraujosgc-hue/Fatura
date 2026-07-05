@@ -318,16 +318,34 @@ async function startServer() {
            }
         }
         
+        // Helper to get DD/MM from various date formats
+        const getDDMM = (d: string) => {
+           if (!d) return "";
+           if (d.includes("-")) {
+              const parts = d.split("-");
+              if (parts[0].length === 4) return `${parts[2]}/${parts[1]}`; // YYYY-MM-DD
+           }
+           if (d.includes("/")) {
+              const parts = d.split("/");
+              if (parts[0].length === 2) return `${parts[0]}/${parts[1]}`; // DD/MM/YYYY
+           }
+           return d.substring(0, 5);
+        };
+
         // Find if there's a conflict with manual OR projected transactions
+        const normalizeDesc = (s: string) => s.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().substring(0, 8);
         const conflict = manualExisting.find((ex: any) => {
-           const sameDate = ex.original_date === extTx.date;
+           const sameDate = getDDMM(ex.original_date) === getDDMM(extTx.date);
            const amountDiff = Math.abs(ex.amount - extTx.amount);
-           return sameDate && amountDiff <= 0.05;
+           const descMatch = normalizeDesc(ex.description) === normalizeDesc(extTx.description);
+           return sameDate && amountDiff <= 0.05 && descMatch;
         }) || projectedExisting.find((ex: any) => {
-           const sameDate = ex.original_date === extTx.date;
+           const sameDate = getDDMM(ex.original_date) === getDDMM(extTx.date);
            const amountDiff = Math.abs(ex.amount - extTx.amount);
-           return sameDate && amountDiff <= 0.05;
+           const descMatch = normalizeDesc(ex.description) === normalizeDesc(extTx.description);
+           return sameDate && amountDiff <= 0.05 && descMatch;
         });
+
 
         if (conflict) {
            const conflictId = `conflict_${i}`;
