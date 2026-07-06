@@ -221,11 +221,11 @@ export function Dashboard({
 
       {/* Transactions List */}
       <div className="bg-slate-950/45 rounded-2xl border border-white/10 backdrop-blur-xl shadow-xl overflow-hidden ring-1 ring-white/5 print:border-none print:shadow-none print:bg-transparent print:ring-0">
-        <div className="hidden print:block mb-6 px-2">
-          <h2 className="text-2xl font-bold text-black border-b border-gray-300 pb-2">
+        <div className="hidden print:block mb-4 px-2">
+          <h2 className="text-xl font-bold text-black border-b border-gray-300 pb-1">
             Relatório de Fatura - {formatMonth(currentMonth)}
           </h2>
-          <p className="text-sm text-gray-700 mt-2">
+          <p className="text-xs text-gray-700 mt-1">
             {filteredTransactions.length} lançamentos encontrados
             {selectedPersonFilter !== 'all' ? ` | Pessoa: ${peopleMap[selectedPersonFilter]?.name}` : ''}
             {selectedCategoryFilter !== 'all' ? ` | Categoria: ${categoriesMap[selectedCategoryFilter]?.name}` : ''}
