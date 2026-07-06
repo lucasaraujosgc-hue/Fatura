@@ -71,6 +71,8 @@ export function Dashboard({
   });
 
   const selectableTxs = filteredTransactions.filter(tx => !tx.is_projected);
+  
+  const filteredTotal = filteredTransactions.reduce((acc, tx) => acc + (Number(tx.amount) || 0), 0);
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -562,6 +564,14 @@ export function Dashboard({
                   )
                 })}
               </tbody>
+              <tfoot className="hidden print:table-footer-group">
+                <tr className="bg-slate-100 font-bold text-black border-t-2 border-black">
+                  <td className="print:hidden"></td>
+                  <td colSpan={4} className="px-5 py-3 text-right uppercase tracking-wider">Total do Filtro:</td>
+                  <td className="px-5 py-3 text-right text-sm">{formatCurrency(filteredTotal)}</td>
+                  <td className="print:hidden"></td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
