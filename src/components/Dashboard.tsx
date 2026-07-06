@@ -70,9 +70,20 @@ export function Dashboard({
     return catMatch && personMatch && searchMatch;
   });
 
+  const getDisplayAmount = (tx: any) => {
+    if (selectedPersonFilter !== 'all' && tx.split_data) {
+      try {
+        const splits = JSON.parse(tx.split_data);
+        const mySplit = splits.find((s: any) => (s.person_id || 'none') === selectedPersonFilter);
+        if (mySplit) return Number(mySplit.amount) || 0;
+      } catch (e) {}
+    }
+    return Number(tx.amount) || 0;
+  };
+
   const selectableTxs = filteredTransactions.filter(tx => !tx.is_projected);
   
-  const filteredTotal = filteredTransactions.reduce((acc, tx) => acc + (Number(tx.amount) || 0), 0);
+  const filteredTotal = filteredTransactions.reduce((acc, tx) => acc + getDisplayAmount(tx), 0);
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -480,9 +491,12 @@ export function Dashboard({
                               try { splits = JSON.parse(tx.split_data); } catch(e) {}
                             }
                             if (splits.length > 0) {
+                              const displaySplits = selectedPersonFilter !== 'all' 
+                                ? splits.filter((s: any) => (s.person_id || 'none') === selectedPersonFilter)
+                                : splits;
                               return (
                                 <div className="flex flex-col gap-1.5">
-                                  {splits.map((s: any, idx: number) => {
+                                  {displaySplits.map((s: any, idx: number) => {
                                     const p = peopleMap[s.person_id];
                                     return (
                                       <span key={idx} className="inline-flex items-center gap-1.5 text-xs text-slate-300">
@@ -510,7 +524,7 @@ export function Dashboard({
                           })()}
                         </td>
                         <td className="px-5 py-3 text-right font-semibold text-white print:text-black">
-                          {formatCurrency(tx.amount)}
+                          {formatCurrency(getDisplayAmount(tx))}
                         </td>
                         <td className="px-5 py-3 text-right print:hidden" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
