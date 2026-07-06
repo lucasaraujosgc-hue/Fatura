@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { formatCurrency, formatMonth } from "../lib/utils";
 import { fetchTransactions, deleteTransaction, fetchPeople, batchAssignTransactions } from "../lib/api";
-import { Trash2, TrendingUp, Users, Tag, Edit2, FileText } from "lucide-react";
+import { Trash2, TrendingUp, Users, Tag, Edit2, FileText, Printer } from "lucide-react";
 import { TransactionEditModal } from "./TransactionEditModal";
 import { CategoryIcon } from "../lib/iconsList";
 
@@ -163,7 +163,7 @@ export function Dashboard({
       )}
 
       {/* Stats row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 print:hidden">
         <div className="bg-slate-950/45 p-6 rounded-2xl border border-white/10 backdrop-blur-xl shadow-xl flex items-center justify-between ring-1 ring-white/5">
           <div>
             <p className="text-sm font-semibold tracking-wide text-slate-400">TOTAL DA FATURA</p>
@@ -220,16 +220,35 @@ export function Dashboard({
       </div>
 
       {/* Transactions List */}
-      <div className="bg-slate-950/45 rounded-2xl border border-white/10 backdrop-blur-xl shadow-xl overflow-hidden ring-1 ring-white/5">
-        <div className="px-6 py-4.5 border-b border-white/10 flex items-center justify-between bg-slate-950/30">
+      <div className="bg-slate-950/45 rounded-2xl border border-white/10 backdrop-blur-xl shadow-xl overflow-hidden ring-1 ring-white/5 print:border-none print:shadow-none print:bg-transparent print:ring-0">
+        <div className="hidden print:block mb-6 px-2">
+          <h2 className="text-2xl font-bold text-black border-b border-gray-300 pb-2">
+            Relatório de Fatura - {formatMonth(currentMonth)}
+          </h2>
+          <p className="text-sm text-gray-700 mt-2">
+            {filteredTransactions.length} lançamentos encontrados
+            {selectedPersonFilter !== 'all' ? ` | Pessoa: ${peopleMap[selectedPersonFilter]?.name}` : ''}
+            {selectedCategoryFilter !== 'all' ? ` | Categoria: ${categoriesMap[selectedCategoryFilter]?.name}` : ''}
+          </p>
+        </div>
+
+        <div className="px-6 py-4.5 border-b border-white/10 flex items-center justify-between bg-slate-950/30 print:hidden">
           <h3 className="font-display font-bold text-slate-100 text-lg">Lançamentos</h3>
-          <span className="text-xs font-semibold px-2.5 py-1 bg-white/5 text-slate-400 border border-white/5 rounded-xl">
-            {filteredTransactions.length} registros
-          </span>
+          <div className="flex items-center gap-3">
+             <button
+               onClick={() => window.print()}
+               className="text-xs font-semibold px-3 py-1.5 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-xl hover:bg-blue-600/30 transition-colors flex items-center gap-1.5"
+             >
+                <Printer size={14} /> Imprimir
+             </button>
+             <span className="text-xs font-semibold px-2.5 py-1 bg-white/5 text-slate-400 border border-white/5 rounded-xl">
+               {filteredTransactions.length} registros
+             </span>
+          </div>
         </div>
 
         {/* Categories filtration row */}
-        <div className="flex flex-wrap items-center justify-between gap-2 px-6 py-4.5 bg-slate-950/20 border-b border-white/10">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-6 py-4.5 bg-slate-950/20 border-b border-white/10 print:hidden">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[10px] font-bold uppercase text-slate-400 mr-2 tracking-wider">Filtrar por Categoria:</span>
             <button
@@ -277,7 +296,7 @@ export function Dashboard({
         </div>
 
         {selectedIds.length > 0 && (
-          <div className="bg-[#0b0e26] px-6 py-3.5 border-b border-cyan-500/20 flex flex-col md:flex-row items-center justify-between gap-3 shadow-inner bg-gradient-to-r from-cyan-950/10 via-indigo-950/30 to-purple-950/10">
+          <div className="bg-[#0b0e26] px-6 py-3.5 border-b border-cyan-500/20 flex flex-col md:flex-row items-center justify-between gap-3 shadow-inner bg-gradient-to-r from-cyan-950/10 via-indigo-950/30 to-purple-950/10 print:hidden">
             <div className="flex items-center gap-2">
               <span className="inline-flex rounded-full h-2.5 w-2.5 bg-cyan-400 animate-pulse shadow-[0_0_8px_#22d3ee]"></span>
               <span className="text-xs font-semibold uppercase tracking-wider text-cyan-300">
@@ -339,7 +358,7 @@ export function Dashboard({
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-950/60 border-b border-white/10 text-slate-400 uppercase text-[10px] font-bold tracking-wider">
                 <tr>
-                  <th className="px-4 py-3.5 w-[40px] text-center" onClick={(e) => e.stopPropagation()}>
+                  <th className="px-4 py-3.5 w-[40px] text-center print:hidden" onClick={(e) => e.stopPropagation()}>
                     <input 
                       type="checkbox"
                       checked={selectableTxs.length > 0 && selectedIds.length === selectableTxs.length}
@@ -352,10 +371,10 @@ export function Dashboard({
                   <th className="px-5 py-3.5 text-center">Parcela</th>
                   <th className="px-5 py-3.5">Responsável</th>
                   <th className="px-5 py-3.5 text-right">Valor</th>
-                  <th className="px-5 py-3.5 w-[80px]"></th>
+                  <th className="px-5 py-3.5 w-[80px] print:hidden"></th>
                 </tr>
                 {/* Search / Filter Row */}
-                <tr className="bg-slate-950/40 border-b border-white/5">
+                <tr className="bg-slate-950/40 border-b border-white/5 print:hidden">
                   <th className="px-4 py-2 border-r border-white/5"></th>
                   <th className="px-5 py-2 border-r border-white/5"></th>
                   <th className="px-5 py-2 border-r border-white/5">
@@ -389,7 +408,7 @@ export function Dashboard({
                               : "hover:bg-white/5")
                         }`}
                       >
-                        <td className="px-4 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-4 py-4 text-center print:hidden" onClick={(e) => e.stopPropagation()}>
                           {!isProjected && (
                             <input 
                               type="checkbox"
@@ -488,10 +507,10 @@ export function Dashboard({
                             return <span className="text-xs text-slate-500">-</span>;
                           })()}
                         </td>
-                        <td className="px-5 py-3 text-right font-semibold text-white">
+                        <td className="px-5 py-3 text-right font-semibold text-white print:text-black">
                           {formatCurrency(tx.amount)}
                         </td>
-                        <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-5 py-3 text-right print:hidden" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
                             {!isProjected && (
                               <button 

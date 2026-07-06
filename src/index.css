@@ -22,3 +22,67 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
 }
+
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  
+  .print\:hidden {
+    display: none !important;
+  }
+
+  .print\:block {
+    display: block !important;
+  }
+  
+  .print\:text-black {
+    color: black !important;
+  }
+  
+  .print\:bg-transparent {
+    background-color: transparent !important;
+  }
+
+  .print\:border-none {
+    border: none !important;
+  }
+  
+  .print\:shadow-none {
+    box-shadow: none !important;
+  }
+  
+  .print\:w-full {
+    width: 100% !important;
+  }
+
+  /* Force table text color */
+  table {
+    color: black !important;
+    border-collapse: collapse;
+    width: 100%;
+  }
+
+  table th, table td {
+    border-bottom: 1px solid #ccc !important;
+    color: black !important;
+    background: transparent !important;
+  }
+
+  table * {
+    color: black !important;
+    text-shadow: none !important;
+  }
+
+  table thead th {
+    font-weight: bold !important;
+    background: #f1f5f9 !important;
+    color: #334155 !important;
+    padding: 8px !important;
+  }
+  
+  .bg-slate-950\/45, .bg-\[\#060814\] {
+    background: transparent !important;
+  }
+}

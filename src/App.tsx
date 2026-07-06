@@ -53,7 +53,7 @@ export default function App() {
       <div className="absolute top-[40%] left-[30%] w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[150px] pointer-events-none z-0"></div>
 
       {/* Header */}
-      <header className="bg-slate-950/40 border-b border-white/5 backdrop-blur-2xl px-6 py-4 sticky top-0 z-50">
+      <header className="bg-slate-950/40 border-b border-white/5 backdrop-blur-2xl px-6 py-4 sticky top-0 z-50 print:hidden">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-gradient-to-tr from-blue-500 to-purple-600 text-white flex items-center justify-center rounded-xl shadow-lg shadow-blue-500/25">
@@ -186,16 +186,16 @@ export default function App() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-6 py-8 relative z-10">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <main className="max-w-7xl mx-auto px-6 py-8 relative z-10 print:py-0 print:px-0">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 print:block">
           
           {/* Left Column - Dashboard */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 print:w-full">
             <Dashboard currentMonth={currentMonth} peopleMap={peopleMap} categories={categories} />
           </div>
 
           {/* Right Column - Controls */}
-          <div className="space-y-6">
+          <div className="space-y-6 print:hidden">
             <UploadForm currentMonth={currentMonth} onUploadSuccess={triggerRefresh} />
             <CategoryChart currentMonth={currentMonth} categories={categories} refreshKey={refreshKey} />
             <ManualTransactionForm currentMonth={currentMonth} peopleList={people} categoriesList={categories} onSuccess={triggerRefresh} />
