@@ -49,12 +49,13 @@ export async function updateTransactionConfig(
   person_id: string | null,
   split_data: any | null,
   category_id?: string | null,
-  notes?: string | null
+  notes?: string | null,
+  is_fixed?: boolean
 ) {
   const res = await fetch(`${API_BASE}/transactions/${id}/config`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ person_id, split_data, category_id, notes }),
+    body: JSON.stringify({ person_id, split_data, category_id, notes, is_fixed }),
   });
   return res.json();
 }

@@ -461,7 +461,12 @@ export function Dashboard({
                             <div>
                               <div className="font-bold text-slate-100 flex items-center gap-1.5 leading-tight text-xs">
                                 {tx.description}
-                                {tx.notes && (
+                                {tx.is_fixed === 1 && (
+    <span className="text-[9px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.5 rounded leading-none flex items-center gap-1" title="Lançamento Fixo (Recorrente)">
+      Fixo
+    </span>
+  )}
+  {tx.notes && (
                                   <span className="text-[9px] text-blue-400 bg-blue-500/10 border border-blue-500/20 px-1 py-0.5 rounded leading-none flex items-center gap-1">
                                     Nota
                                   </span>

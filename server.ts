@@ -222,9 +222,9 @@ async function startServer() {
   app.put("/api/transactions/:id/config", async (req, res) => {
     try {
       const { id } = req.params;
-      const { person_id, split_data, category_id, notes } = req.body;
+      const { person_id, split_data, category_id, notes, is_fixed } = req.body;
       const { updateTransactionConfig } = await import("./server/db.js");
-      await updateTransactionConfig(id, person_id, split_data, category_id, notes);
+      await updateTransactionConfig(id, person_id, split_data, category_id, notes, is_fixed ? 1 : 0);
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

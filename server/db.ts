@@ -65,6 +65,12 @@ export async function setupDb() {
     // Ignore if column already exists
   }
 
+  try {
+    await db.exec(`ALTER TABLE transactions ADD COLUMN is_fixed INTEGER DEFAULT 0;`);
+  } catch (e) {
+    // Ignore if column already exists
+  }
+
   // Populate default categories if empty
   try {
     const countRow = await db.get("SELECT COUNT(*) as count FROM categories");
@@ -137,6 +143,7 @@ export async function getAvailableMonths() {
   return rows.map((r) => r.billed_month);
 }
 
+
 export async function getTransactionsForMonth(month: string) {
   // First, get all explicit transactions for this month (imported or manual)
   const explicitTx = await db.all("SELECT * FROM transactions WHERE billed_month = ?", [month]);
@@ -183,8 +190,6 @@ export async function getTransactionsForMonth(month: string) {
     }
   }
 
-  // Deduplicate projected transactions. 
-  // If an explicit transaction (imported or manual) already exists for this exact installment (same date, amount, description), we drop the projected one.
   const getDDMM = (d: string) => {
      if (!d) return "";
      if (d.includes("-")) {
@@ -198,19 +203,44 @@ export async function getTransactionsForMonth(month: string) {
      return d.substring(0, 5);
   };
 
+  // Find all fixed transactions from before this month
+  const fixedTxRows = await db.all(`
+    SELECT * FROM transactions 
+    WHERE is_fixed = 1 
+    AND billed_month < ?
+    ORDER BY billed_month DESC
+  `, [month]);
+
+  const fixedTxMap = new Map();
+  for (const tx of fixedTxRows) {
+    const key = getDDMM(tx.original_date) + "_" + tx.description.toLowerCase().trim();
+    if (!fixedTxMap.has(key)) {
+      fixedTxMap.set(key, tx);
+    }
+  }
+
+  for (const tx of fixedTxMap.values()) {
+    projectedTx.push({
+      ...tx,
+      id: tx.id + "_proj_fixed",
+      billed_month: month,
+      is_imported: 0,
+      is_projected: true,
+    });
+  }
+
   const safeProjected = projectedTx.filter(ptx => {
     return !explicitTx.some(etx => {
       // Allow minor variations in amount due to parsing
       const sameAmount = Math.abs(etx.amount - ptx.amount) <= 0.05;
       const sameDate = getDDMM(etx.original_date) === getDDMM(ptx.original_date);
-      // We can also check if the descriptions are somewhat similar or if current_installment matches, 
-      // but same date and amount is usually a strong enough heuristic for the exact same purchase.
       return sameAmount && sameDate;
     });
   });
 
   return [...explicitTx, ...safeProjected];
 }
+
 
 export async function addManualTransaction(data: any) {
   const { billed_month, original_date, description, amount, current_installment, total_installment, person_id, category_id, notes } = data;
@@ -267,32 +297,35 @@ export async function deleteImportedInvoice(month: string) {
   await db.run("DELETE FROM transactions WHERE billed_month = ? AND is_imported = 1", [month]);
 }
 
+
+
 export async function updateTransactionConfig(
   id: string,
   person_id: string | null,
   split_data: any | null,
   category_id: string | null = undefined,
-  notes: string | null = undefined
+  notes: string | null = undefined,
+  is_fixed: number = 0
 ) {
   if (category_id !== undefined && notes !== undefined) {
     await db.run(
-      "UPDATE transactions SET person_id = ?, split_data = ?, category_id = ?, notes = ? WHERE id = ?",
-      [person_id, split_data ? JSON.stringify(split_data) : null, category_id, notes, id]
+      "UPDATE transactions SET person_id = ?, split_data = ?, category_id = ?, notes = ?, is_fixed = ? WHERE id = ?",
+      [person_id, split_data ? JSON.stringify(split_data) : null, category_id, notes, is_fixed, id]
     );
   } else if (category_id !== undefined) {
     await db.run(
-      "UPDATE transactions SET person_id = ?, split_data = ?, category_id = ? WHERE id = ?",
-      [person_id, split_data ? JSON.stringify(split_data) : null, category_id, id]
+      "UPDATE transactions SET person_id = ?, split_data = ?, category_id = ?, is_fixed = ? WHERE id = ?",
+      [person_id, split_data ? JSON.stringify(split_data) : null, category_id, is_fixed, id]
     );
   } else if (notes !== undefined) {
     await db.run(
-      "UPDATE transactions SET person_id = ?, split_data = ?, notes = ? WHERE id = ?",
-      [person_id, split_data ? JSON.stringify(split_data) : null, notes, id]
+      "UPDATE transactions SET person_id = ?, split_data = ?, notes = ?, is_fixed = ? WHERE id = ?",
+      [person_id, split_data ? JSON.stringify(split_data) : null, notes, is_fixed, id]
     );
   } else {
     await db.run(
-      "UPDATE transactions SET person_id = ?, split_data = ? WHERE id = ?",
-      [person_id, split_data ? JSON.stringify(split_data) : null, id]
+      "UPDATE transactions SET person_id = ?, split_data = ?, is_fixed = ? WHERE id = ?",
+      [person_id, split_data ? JSON.stringify(split_data) : null, is_fixed, id]
     );
   }
 }

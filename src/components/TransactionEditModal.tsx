@@ -21,6 +21,7 @@ export function TransactionEditModal({
   const [splits, setSplits] = useState<{person_id: string, amount: string}[]>([]);
   const [isSplit, setIsSplit] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isFixed, setIsFixed] = useState(transaction.is_fixed === 1);
 
   useEffect(() => {
     if (transaction.split_data) {
@@ -71,7 +72,7 @@ export function TransactionEditModal({
         finalPersonId = personId || null;
       }
 
-      await updateTransactionConfig(transaction.id, finalPersonId, finalSplitData, categoryId || null, notes || null);
+      await updateTransactionConfig(transaction.id, finalPersonId, finalSplitData, categoryId || null, notes || null, isFixed);
       onSave();
     } catch (err) {
       alert("Erro ao salvar configurações");
