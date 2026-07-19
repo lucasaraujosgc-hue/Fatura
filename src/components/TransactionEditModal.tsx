@@ -185,6 +185,20 @@ export function TransactionEditModal({
             </div>
           )}
 
+          {/* Fixo Toggle */}
+          <div className="flex items-center gap-3 bg-white/5 p-3 rounded-xl border border-white/5">
+            <input 
+              type="checkbox" 
+              id="isFixed" 
+              checked={isFixed}
+              onChange={(e) => setIsFixed(e.target.checked)}
+              className="w-4 h-4 rounded border-white/15 text-blue-500 focus:ring-blue-500/50 bg-black/20 accent-blue-500"
+            />
+            <label htmlFor="isFixed" className="text-sm font-medium text-slate-300 cursor-pointer">
+              Lançamento Fixo (Repete todo mês)
+            </label>
+          </div>
+
           {/* Categoria Selection */}
           <div className="pt-2 border-t border-white/5">
             <label className="block text-sm font-semibold text-slate-400 mb-1.5">Categoria</label>

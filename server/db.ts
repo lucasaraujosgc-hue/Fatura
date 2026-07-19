@@ -243,7 +243,7 @@ export async function getTransactionsForMonth(month: string) {
 
 
 export async function addManualTransaction(data: any) {
-  const { billed_month, original_date, description, amount, current_installment, total_installment, person_id, category_id, notes } = data;
+  const { billed_month, original_date, description, amount, current_installment, total_installment, person_id, category_id, notes, is_fixed } = data;
   
   const current = current_installment || 1;
   const total = total_installment || 1;
@@ -260,8 +260,8 @@ export async function addManualTransaction(data: any) {
     
     await db.run(`
       INSERT INTO transactions 
-      (id, billed_month, original_date, description, amount, current_installment, total_installment, person_id, is_imported, category_id, notes) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+      (id, billed_month, original_date, description, amount, current_installment, total_installment, person_id, is_imported, category_id, notes, is_fixed) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
     `, [
       id, 
       currentBilledMonth, 
@@ -272,8 +272,10 @@ export async function addManualTransaction(data: any) {
       total, 
       person_id || null,
       category_id || null,
-      notes || null
+      notes || null,
+      is_fixed || 0
     ]);
+
     insertedIds.push(id);
 
     // increment month

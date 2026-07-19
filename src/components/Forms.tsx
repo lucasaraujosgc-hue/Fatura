@@ -215,6 +215,7 @@ export function ManualTransactionForm({
   const [personId, setPersonId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [notes, setNotes] = useState("");
+  const [isFixed, setIsFixed] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [loading, setLoading] = useState(false);
   const [transactionDate, setTransactionDate] = useState(new Date().toISOString().split('T')[0]);
@@ -241,7 +242,8 @@ export function ManualTransactionForm({
         total_installment: total || 1,
         person_id: personId || null,
         category_id: categoryId || null,
-        notes: notes || null
+        notes: notes || null,
+        is_fixed: isFixed ? 1 : 0
       });
       onSuccess();
       alert(`Lançamento manual adicionado com sucesso a partir de ${formatMonth(startMonth)}!`);
