@@ -46,26 +46,78 @@ export async function deleteTransaction(id: string) {
 
 export async function updateTransactionConfig(
   id: string,
-  person_id: string | null,
-  split_data: any | null,
+  person_id_or_data: any,
+  split_data?: any | null,
   category_id?: string | null,
   notes?: string | null,
   is_fixed?: boolean
 ) {
+  let payload: any = {};
+  if (typeof person_id_or_data === "object" && person_id_or_data !== null && !Array.isArray(person_id_or_data)) {
+    payload = person_id_or_data;
+  } else {
+    payload = { person_id: person_id_or_data, split_data, category_id, notes, is_fixed };
+  }
+
   const res = await fetch(`${API_BASE}/transactions/${id}/config`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ person_id, split_data, category_id, notes, is_fixed }),
+    body: JSON.stringify(payload),
   });
   return res.json();
 }
 
-export async function batchAssignTransactions(ids: string[], person_id: string | null, category_id?: string | null) {
+export async function batchAssignTransactions(
+  ids: string[], 
+  person_id: string | null, 
+  category_id?: string | null,
+  target_month?: string | null
+) {
   const res = await fetch(`${API_BASE}/transactions/batch-assign`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids, person_id, category_id }),
+    body: JSON.stringify({ ids, person_id, category_id, target_month }),
   });
+  return res.json();
+}
+
+export async function batchMoveTransactions(ids: string[], target_month: string) {
+  const res = await fetch(`${API_BASE}/transactions/batch-move`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids, target_month }),
+  });
+  return res.json();
+}
+
+export async function batchDeleteTransactions(ids: string[]) {
+  const res = await fetch(`${API_BASE}/transactions/batch-delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
+  return res.json();
+}
+
+export async function shiftTransactionsByDate(options: {
+  from_month: string;
+  to_month: string;
+  start_date?: string;
+  end_date?: string;
+  from_day?: number;
+  to_day?: number;
+  ids?: string[];
+}) {
+  const res = await fetch(`${API_BASE}/transactions/shift-by-date`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(options),
+  });
+  return res.json();
+}
+
+export async function fetchDuplicateCandidates(month: string) {
+  const res = await fetch(`${API_BASE}/transactions/duplicates/${month}`);
   return res.json();
 }
 

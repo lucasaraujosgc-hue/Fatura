@@ -1,18 +1,30 @@
 import React, { useState, useEffect } from "react";
 import { formatCurrency, formatMonth } from "../lib/utils";
-import { fetchTransactions, deleteTransaction, fetchPeople, batchAssignTransactions } from "../lib/api";
-import { Trash2, TrendingUp, Users, Tag, Edit2, FileText, Printer } from "lucide-react";
+import { 
+  fetchTransactions, 
+  deleteTransaction, 
+  fetchPeople, 
+  batchAssignTransactions,
+  batchMoveTransactions,
+  batchDeleteTransactions 
+} from "../lib/api";
+import { Trash2, TrendingUp, Users, Tag, Edit2, FileText, Printer, ArrowRightLeft, MoveRight } from "lucide-react";
 import { TransactionEditModal } from "./TransactionEditModal";
+import { InvoiceAdjustmentModal } from "./InvoiceAdjustmentModal";
 import { CategoryIcon } from "../lib/iconsList";
 
 export function Dashboard({ 
   currentMonth, 
   peopleMap, 
-  categories = [] 
+  categories = [],
+  availableMonths = [],
+  onRefresh
 }: { 
   currentMonth: string, 
   peopleMap: Record<string, any>, 
-  categories?: any[] 
+  categories?: any[],
+  availableMonths?: string[],
+  onRefresh?: () => void
 }) {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,6 +32,8 @@ export function Dashboard({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [targetPersonId, setTargetPersonId] = useState<string>("");
   const [targetCategoryId, setTargetCategoryId] = useState<string>("");
+  const [targetBatchMonth, setTargetBatchMonth] = useState<string>("");
+  const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("all");
   const [selectedPersonFilter, setSelectedPersonFilter] = useState<string>("all");
   const [searchDesc, setSearchDesc] = useState<string>("");
@@ -108,14 +122,65 @@ export function Dashboard({
       await batchAssignTransactions(
         selectedIds, 
         targetPersonId || null, 
-        targetCategoryId || null
+        targetCategoryId || null,
+        targetBatchMonth || null
       );
       setSelectedIds([]);
       setTargetPersonId("");
       setTargetCategoryId("");
+      setTargetBatchMonth("");
       loadTxs();
+      onRefresh?.();
     } catch (e) {
-      alert("Erro ao atribuir em lote.");
+      alert("Erro ao aplicar em lote.");
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
+  const handleBatchMove = async () => {
+    if (selectedIds.length === 0) return;
+    if (!targetBatchMonth) {
+      alert("Selecione o mês de destino para mover.");
+      return;
+    }
+    if (targetBatchMonth === currentMonth) {
+      alert("Selecione uma fatura diferente da atual.");
+      return;
+    }
+    if (!confirm(`Deseja mover ${selectedIds.length} lançamento(s) para a fatura de ${formatMonth(targetBatchMonth)}?`)) {
+      return;
+    }
+
+    setBatchLoading(true);
+    try {
+      await batchMoveTransactions(selectedIds, targetBatchMonth);
+      setSelectedIds([]);
+      setTargetBatchMonth("");
+      loadTxs();
+      onRefresh?.();
+      alert(`Lançamentos movidos com sucesso para ${formatMonth(targetBatchMonth)}!`);
+    } catch (e) {
+      alert("Erro ao mover lançamentos em lote.");
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (!confirm(`Tem certeza que deseja excluir os ${selectedIds.length} lançamentos selecionados?`)) {
+      return;
+    }
+
+    setBatchLoading(true);
+    try {
+      await batchDeleteTransactions(selectedIds);
+      setSelectedIds([]);
+      loadTxs();
+      onRefresh?.();
+    } catch (e) {
+      alert("Erro ao excluir lançamentos em lote.");
     } finally {
       setBatchLoading(false);
     }
@@ -123,12 +188,16 @@ export function Dashboard({
 
   const handleDelete = async (id: string, isProjected: boolean) => {
     if (isProjected) {
-      alert("Não é possível deletar um lançamento projetado (forecast). Delete a fatura original.");
+      if (!confirm("Este é um lançamento projetado automaticamente. Deseja ocultá-lo desta visualização?")) {
+        return;
+      }
+      setTransactions(transactions.filter(t => t.id !== id));
       return;
     }
-    if (confirm("Tem certeza que deseja deletar este lançamento manual? Lançamentos importados da fatura voltarão a aparecer no próximo import.")) {
+    if (confirm("Tem certeza que deseja deletar este lançamento?")) {
       await deleteTransaction(id);
       setTransactions(transactions.filter(t => t.id !== id));
+      onRefresh?.();
     }
   };
 
@@ -171,6 +240,21 @@ export function Dashboard({
           onSave={() => {
             setEditingTx(null);
             loadTxs();
+            onRefresh?.();
+          }}
+        />
+      )}
+
+      {isAdjustModalOpen && (
+        <InvoiceAdjustmentModal
+          isOpen={isAdjustModalOpen}
+          onClose={() => setIsAdjustModalOpen(false)}
+          currentMonth={currentMonth}
+          availableMonths={availableMonths.length > 0 ? availableMonths : [currentMonth]}
+          peopleMap={peopleMap}
+          onSuccess={() => {
+            loadTxs();
+            onRefresh?.();
           }}
         />
       )}
@@ -245,18 +329,26 @@ export function Dashboard({
           </p>
         </div>
 
-        <div className="px-6 py-4.5 border-b border-white/10 flex items-center justify-between bg-slate-950/30 print:hidden">
+        <div className="px-6 py-4.5 border-b border-white/10 flex flex-wrap items-center justify-between gap-3 bg-slate-950/30 print:hidden">
           <h3 className="font-display font-bold text-slate-100 text-lg">Lançamentos</h3>
-          <div className="flex items-center gap-3">
-             <button
-               onClick={() => window.print()}
-               className="text-xs font-semibold px-3 py-1.5 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-xl hover:bg-blue-600/30 transition-colors flex items-center gap-1.5"
-             >
-                <Printer size={14} /> Imprimir
-             </button>
-             <span className="text-xs font-semibold px-2.5 py-1 bg-white/5 text-slate-400 border border-white/5 rounded-xl">
-               {filteredTransactions.length} registros
-             </span>
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => setIsAdjustModalOpen(true)}
+              className="text-xs font-semibold px-3 py-1.5 bg-gradient-to-r from-cyan-500/20 via-blue-600/20 to-purple-600/20 hover:from-cyan-500/30 hover:to-purple-600/30 text-cyan-300 border border-cyan-500/30 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shadow-cyan-500/10 active:scale-95"
+              title="Ajustar faturas e transferir lançamentos após alteração da data de vencimento ou corte do cartão"
+            >
+              <ArrowRightLeft size={14} className="text-cyan-400" />
+              <span>Ajustar Vencimento / Fechamento</span>
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="text-xs font-semibold px-3 py-1.5 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-xl hover:bg-blue-600/30 transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <Printer size={14} /> Imprimir
+            </button>
+            <span className="text-xs font-semibold px-2.5 py-1 bg-white/5 text-slate-400 border border-white/5 rounded-xl">
+              {filteredTransactions.length} registros
+            </span>
           </div>
         </div>
 
@@ -309,11 +401,11 @@ export function Dashboard({
         </div>
 
         {selectedIds.length > 0 && (
-          <div className="bg-[#0b0e26] px-6 py-3.5 border-b border-cyan-500/20 flex flex-col md:flex-row items-center justify-between gap-3 shadow-inner bg-gradient-to-r from-cyan-950/10 via-indigo-950/30 to-purple-950/10 print:hidden">
+          <div className="bg-[#0b0e26] px-6 py-3.5 border-b border-cyan-500/20 flex flex-col md:flex-row items-center justify-between gap-3 shadow-inner bg-gradient-to-r from-cyan-950/20 via-indigo-950/40 to-purple-950/20 print:hidden">
             <div className="flex items-center gap-2">
               <span className="inline-flex rounded-full h-2.5 w-2.5 bg-cyan-400 animate-pulse shadow-[0_0_8px_#22d3ee]"></span>
               <span className="text-xs font-semibold uppercase tracking-wider text-cyan-300">
-                {selectedIds.length} selecionado(s) para lote
+                {selectedIds.length} selecionado(s) em lote
               </span>
             </div>
             
@@ -323,7 +415,7 @@ export function Dashboard({
                 onChange={(e) => setTargetPersonId(e.target.value)}
                 className="flex-1 sm:flex-initial text-xs bg-slate-950/60 border border-white/10 text-slate-200 rounded-xl px-3 py-2 outline-none focus:border-cyan-400/50"
               >
-                <option value="" className="bg-[#0b0d1b] text-slate-400">Pessoa (Sem alteração / can)</option>
+                <option value="" className="bg-[#0b0d1b] text-slate-400">Pessoa (Sem alteração)</option>
                 {Object.values(peopleMap).map((p: any) => (
                   <option key={p.id} value={p.id} className="bg-[#0b0d1b] text-slate-100 font-medium">
                     Atribuir a {p.name}
@@ -343,18 +435,50 @@ export function Dashboard({
                   </option>
                 ))}
               </select>
+
+              {/* Move to Month Control */}
+              <div className="flex items-center gap-1 bg-slate-950/80 border border-cyan-500/30 rounded-xl px-2 py-1">
+                <span className="text-[11px] text-cyan-300 font-medium whitespace-nowrap">Fatura:</span>
+                <input
+                  type="month"
+                  value={targetBatchMonth}
+                  onChange={(e) => setTargetBatchMonth(e.target.value)}
+                  className="bg-transparent text-xs text-white outline-none w-28 text-center font-mono"
+                  placeholder="YYYY-MM"
+                />
+                {targetBatchMonth && (
+                  <button
+                    type="button"
+                    onClick={handleBatchMove}
+                    disabled={batchLoading}
+                    className="text-[11px] font-bold bg-cyan-600 hover:bg-cyan-500 text-white px-2 py-1 rounded-lg transition-colors cursor-pointer"
+                    title="Mover selecionados para esta fatura"
+                  >
+                    Mover
+                  </button>
+                )}
+              </div>
               
               <button
                 onClick={handleBatchAssign}
                 disabled={batchLoading}
-                className="bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 hover:brightness-110 active:scale-95 text-white font-bold text-xs px-4 py-2.5 rounded-xl border border-cyan-400/20 shadow-lg shadow-cyan-500/15 cursor-pointer flex items-center gap-1 transition-all"
+                className="bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 hover:brightness-110 active:scale-95 text-white font-bold text-xs px-3.5 py-2 rounded-xl border border-cyan-400/20 shadow-lg shadow-cyan-500/15 cursor-pointer flex items-center gap-1 transition-all"
               >
-                {batchLoading ? "Processando..." : "Jogar em Lote"}
+                {batchLoading ? "Processando..." : "Aplicar"}
+              </button>
+
+              <button
+                onClick={handleBatchDelete}
+                disabled={batchLoading}
+                className="p-2 text-slate-400 hover:text-red-400 hover:bg-white/5 rounded-xl transition-all cursor-pointer"
+                title="Excluir selecionados"
+              >
+                <Trash2 size={16} />
               </button>
               
               <button
                 onClick={() => setSelectedIds([])}
-                className="text-xs font-semibold text-slate-400 hover:text-slate-200 px-3 py-2 hover:bg-white/5 rounded-xl transition-all cursor-pointer"
+                className="text-xs font-semibold text-slate-400 hover:text-slate-200 px-2.5 py-1.5 hover:bg-white/5 rounded-xl transition-all cursor-pointer"
               >
                 Cancelar
               </button>
@@ -533,15 +657,13 @@ export function Dashboard({
                         </td>
                         <td className="px-5 py-3 text-right print:hidden" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
-                            {!isProjected && (
-                              <button 
-                                onClick={() => setEditingTx(tx)}
-                                className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-white/5 rounded-lg transition-all duration-300 cursor-pointer"
-                                title="Editar Responsável e Categoria"
-                              >
-                                <Edit2 size={13} />
-                              </button>
-                            )}
+                            <button 
+                              onClick={() => setEditingTx(tx)}
+                              className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-white/5 rounded-lg transition-all duration-300 cursor-pointer"
+                              title={isProjected ? "Efetivar / Ajustar lançamento projetado" : "Editar Lançamento"}
+                            >
+                              <Edit2 size={13} />
+                            </button>
                             <button 
                               onClick={() => handleDelete(tx.id, isProjected)}
                               className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-white/5 rounded-lg transition-all duration-300 cursor-pointer"

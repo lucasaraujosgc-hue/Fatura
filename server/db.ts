@@ -303,43 +303,294 @@ export async function deleteImportedInvoice(month: string) {
 
 export async function updateTransactionConfig(
   id: string,
-  person_id: string | null,
-  split_data: any | null,
-  category_id: string | null = undefined,
-  notes: string | null = undefined,
-  is_fixed: number = 0
+  person_id_or_data: any,
+  split_data?: any | null,
+  category_id?: string | null,
+  notes?: string | null,
+  is_fixed?: number | boolean
 ) {
-  if (category_id !== undefined && notes !== undefined) {
-    await db.run(
-      "UPDATE transactions SET person_id = ?, split_data = ?, category_id = ?, notes = ?, is_fixed = ? WHERE id = ?",
-      [person_id, split_data ? JSON.stringify(split_data) : null, category_id, notes, is_fixed, id]
-    );
-  } else if (category_id !== undefined) {
-    await db.run(
-      "UPDATE transactions SET person_id = ?, split_data = ?, category_id = ?, is_fixed = ? WHERE id = ?",
-      [person_id, split_data ? JSON.stringify(split_data) : null, category_id, is_fixed, id]
-    );
-  } else if (notes !== undefined) {
-    await db.run(
-      "UPDATE transactions SET person_id = ?, split_data = ?, notes = ?, is_fixed = ? WHERE id = ?",
-      [person_id, split_data ? JSON.stringify(split_data) : null, notes, is_fixed, id]
-    );
+  // Support either (id, dataObject) or (id, person_id, split_data, category_id, notes, is_fixed)
+  let data: any = {};
+  if (typeof person_id_or_data === "object" && person_id_or_data !== null && !Array.isArray(person_id_or_data)) {
+    data = { ...person_id_or_data };
   } else {
-    await db.run(
-      "UPDATE transactions SET person_id = ?, split_data = ?, is_fixed = ? WHERE id = ?",
-      [person_id, split_data ? JSON.stringify(split_data) : null, is_fixed, id]
-    );
+    data = {
+      person_id: person_id_or_data,
+      split_data,
+      category_id,
+      notes,
+      is_fixed: typeof is_fixed === "boolean" ? (is_fixed ? 1 : 0) : (is_fixed ?? 0)
+    };
   }
+
+  // Handle projected transaction materialization
+  if (id.includes("_proj")) {
+    const newId = uuidv4();
+    await db.run(`
+      INSERT INTO transactions 
+      (id, billed_month, original_date, description, amount, current_installment, total_installment, person_id, is_imported, category_id, notes, is_fixed, split_data)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+    `, [
+      newId,
+      data.billed_month || "",
+      data.original_date || new Date().toISOString().slice(0, 10),
+      data.description || "Lançamento",
+      data.amount !== undefined ? Number(data.amount) : 0,
+      data.current_installment || 1,
+      data.total_installment || 1,
+      data.person_id || null,
+      data.category_id || null,
+      data.notes || null,
+      data.is_fixed ? 1 : 0,
+      data.split_data ? (typeof data.split_data === "string" ? data.split_data : JSON.stringify(data.split_data)) : null
+    ]);
+    return { id: newId };
+  }
+
+  // Build dynamic update query
+  const sets: string[] = [];
+  const params: any[] = [];
+
+  if (data.person_id !== undefined) {
+    sets.push("person_id = ?");
+    params.push(data.person_id || null);
+  }
+  if (data.split_data !== undefined) {
+    sets.push("split_data = ?");
+    params.push(data.split_data ? (typeof data.split_data === "string" ? data.split_data : JSON.stringify(data.split_data)) : null);
+  }
+  if (data.category_id !== undefined) {
+    sets.push("category_id = ?");
+    params.push(data.category_id || null);
+  }
+  if (data.notes !== undefined) {
+    sets.push("notes = ?");
+    params.push(data.notes || null);
+  }
+  if (data.is_fixed !== undefined) {
+    sets.push("is_fixed = ?");
+    params.push(data.is_fixed ? 1 : 0);
+  }
+  if (data.billed_month !== undefined) {
+    sets.push("billed_month = ?");
+    params.push(data.billed_month);
+  }
+  if (data.original_date !== undefined) {
+    sets.push("original_date = ?");
+    params.push(data.original_date);
+  }
+  if (data.description !== undefined) {
+    sets.push("description = ?");
+    params.push(data.description);
+  }
+  if (data.amount !== undefined) {
+    sets.push("amount = ?");
+    params.push(Number(data.amount));
+  }
+  if (data.current_installment !== undefined) {
+    sets.push("current_installment = ?");
+    params.push(Number(data.current_installment));
+  }
+  if (data.total_installment !== undefined) {
+    sets.push("total_installment = ?");
+    params.push(Number(data.total_installment));
+  }
+
+  if (sets.length > 0) {
+    params.push(id);
+    await db.run(`UPDATE transactions SET ${sets.join(", ")} WHERE id = ?`, params);
+  }
+  return { id };
 }
 
-export async function batchUpdateTransactions(ids: string[], person_id?: string | null, category_id?: string | null) {
+export async function batchMoveTransactions(ids: string[], target_month: string) {
+  if (!ids || ids.length === 0 || !target_month) return { count: 0 };
+  const placeholders = ids.map(() => "?").join(",");
+  const result = await db.run(
+    `UPDATE transactions SET billed_month = ? WHERE id IN (${placeholders})`,
+    [target_month, ...ids]
+  );
+  return { count: result.changes || ids.length };
+}
+
+export async function batchDeleteTransactions(ids: string[]) {
+  if (!ids || ids.length === 0) return { count: 0 };
+  const placeholders = ids.map(() => "?").join(",");
+  const result = await db.run(`DELETE FROM transactions WHERE id IN (${placeholders})`, ids);
+  return { count: result.changes || ids.length };
+}
+
+export async function shiftTransactionsByDate(options: {
+  from_month: string;
+  to_month: string;
+  start_date?: string;
+  end_date?: string;
+  from_day?: number;
+  to_day?: number;
+  ids?: string[];
+}) {
+  const { from_month, to_month, start_date, end_date, from_day, to_day, ids } = options;
+  if (!from_month || !to_month) {
+    throw new Error("from_month e to_month são obrigatórios.");
+  }
+
+  let query = "SELECT * FROM transactions WHERE billed_month = ?";
+  const params: any[] = [from_month];
+
+  if (ids && ids.length > 0) {
+    query += ` AND id IN (${ids.map(() => "?").join(",")})`;
+    params.push(...ids);
+  }
+
+  const txs = await db.all(query, params);
+  
+  // Filter by dates/days in JS for resilient parsing of different date formats
+  const parseDay = (dStr: string) => {
+    if (!dStr) return 0;
+    if (dStr.includes("-")) {
+      const parts = dStr.split("-");
+      if (parts.length === 3) return parseInt(parts[2], 10);
+    }
+    if (dStr.includes("/")) {
+      const parts = dStr.split("/");
+      return parseInt(parts[0], 10);
+    }
+    return 0;
+  };
+
+  const toIsoDate = (dStr: string) => {
+    if (!dStr) return "";
+    if (dStr.includes("-") && dStr.length >= 10) return dStr.slice(0, 10);
+    if (dStr.includes("/")) {
+      const parts = dStr.split("/");
+      if (parts.length === 3) {
+        const dd = parts[0].padStart(2, "0");
+        const mm = parts[1].padStart(2, "0");
+        const yyyy = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+        return `${yyyy}-${mm}-${dd}`;
+      }
+    }
+    return dStr;
+  };
+
+  const matchingIds: string[] = [];
+
+  for (const tx of txs) {
+    let match = true;
+    const day = parseDay(tx.original_date);
+    const isoDate = toIsoDate(tx.original_date);
+
+    if (from_day !== undefined && day < from_day) {
+      match = false;
+    }
+    if (to_day !== undefined && day > to_day) {
+      match = false;
+    }
+    if (start_date && isoDate && isoDate < start_date) {
+      match = false;
+    }
+    if (end_date && isoDate && isoDate > end_date) {
+      match = false;
+    }
+
+    if (match) {
+      matchingIds.push(tx.id);
+    }
+  }
+
+  if (matchingIds.length > 0) {
+    const placeholders = matchingIds.map(() => "?").join(",");
+    await db.run(`UPDATE transactions SET billed_month = ? WHERE id IN (${placeholders})`, [to_month, ...matchingIds]);
+  }
+
+  return { movedCount: matchingIds.length, movedIds: matchingIds };
+}
+
+export async function getDuplicateCandidates(month: string) {
+  // Find transactions for this month and adjacent months
+  const [yearStr, monthStr] = month.split("-");
+  const y = parseInt(yearStr, 10);
+  const m = parseInt(monthStr, 10);
+
+  const prevM = m === 1 ? 12 : m - 1;
+  const prevY = m === 1 ? y - 1 : y;
+  const nextM = m === 12 ? 1 : m + 1;
+  const nextY = m === 12 ? y + 1 : y;
+
+  const prevMonthStr = `${prevY}-${prevM.toString().padStart(2, "0")}`;
+  const nextMonthStr = `${nextY}-${nextM.toString().padStart(2, "0")}`;
+
+  const currentTxs = await db.all("SELECT * FROM transactions WHERE billed_month = ?", [month]);
+  const otherTxs = await db.all(
+    "SELECT * FROM transactions WHERE billed_month IN (?, ?)",
+    [prevMonthStr, nextMonthStr]
+  );
+
+  const cleanDesc = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 10);
+
+  const candidates: Array<{
+    currentTx: any;
+    matchingTx: any;
+    matchType: string;
+  }> = [];
+
+  // Check 1: Same month duplicates
+  for (let i = 0; i < currentTxs.length; i++) {
+    for (let j = i + 1; j < currentTxs.length; j++) {
+      const a = currentTxs[i];
+      const b = currentTxs[j];
+      const sameAmount = Math.abs(a.amount - b.amount) <= 0.05;
+      const sameDesc = cleanDesc(a.description) === cleanDesc(b.description);
+      const sameDate = a.original_date === b.original_date;
+
+      if (sameAmount && sameDesc) {
+        candidates.push({
+          currentTx: a,
+          matchingTx: b,
+          matchType: sameDate ? "Mesmo valor, data e descrição na mesma fatura" : "Mesmo valor e descrição na mesma fatura"
+        });
+      }
+    }
+  }
+
+  // Check 2: Cross month duplicates (often caused by transitional invoice with shifted due date)
+  for (const cur of currentTxs) {
+    for (const oth of otherTxs) {
+      const sameAmount = Math.abs(cur.amount - oth.amount) <= 0.05;
+      const sameDesc = cleanDesc(cur.description) === cleanDesc(oth.description);
+      if (sameAmount && sameDesc) {
+        candidates.push({
+          currentTx: cur,
+          matchingTx: oth,
+          matchType: `Repetido entre fatura ${cur.billed_month} e ${oth.billed_month}`
+        });
+      }
+    }
+  }
+
+  return candidates;
+}
+
+export async function batchUpdateTransactions(ids: string[], person_id?: string | null, category_id?: string | null, target_month?: string | null) {
   for (const id of ids) {
-    if (person_id !== undefined && category_id !== undefined) {
-      await db.run("UPDATE transactions SET person_id = ?, category_id = ? WHERE id = ?", [person_id, category_id, id]);
-    } else if (person_id !== undefined) {
-      await db.run("UPDATE transactions SET person_id = ? WHERE id = ?", [person_id, id]);
-    } else if (category_id !== undefined) {
-      await db.run("UPDATE transactions SET category_id = ? WHERE id = ?", [category_id, id]);
+    const updates: string[] = [];
+    const params: any[] = [];
+    if (person_id !== undefined) {
+      updates.push("person_id = ?");
+      params.push(person_id);
+    }
+    if (category_id !== undefined) {
+      updates.push("category_id = ?");
+      params.push(category_id);
+    }
+    if (target_month !== undefined && target_month !== null && target_month !== "") {
+      updates.push("billed_month = ?");
+      params.push(target_month);
+    }
+
+    if (updates.length > 0) {
+      params.push(id);
+      await db.run(`UPDATE transactions SET ${updates.join(", ")} WHERE id = ?`, params);
     }
   }
 }

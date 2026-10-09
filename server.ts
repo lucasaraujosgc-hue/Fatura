@@ -210,10 +210,62 @@ async function startServer() {
 
   app.put("/api/transactions/batch-assign", async (req, res) => {
     try {
-      const { ids, person_id, category_id } = req.body;
+      const { ids, person_id, category_id, target_month } = req.body;
       const { batchUpdateTransactions } = await import("./server/db.js");
-      await batchUpdateTransactions(ids, person_id, category_id);
+      await batchUpdateTransactions(ids, person_id, category_id, target_month);
       res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/transactions/batch-move", async (req, res) => {
+    try {
+      const { ids, target_month } = req.body;
+      const { batchMoveTransactions } = await import("./server/db.js");
+      const result = await batchMoveTransactions(ids, target_month);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/transactions/batch-delete", async (req, res) => {
+    try {
+      const { ids } = req.body;
+      const { batchDeleteTransactions } = await import("./server/db.js");
+      const result = await batchDeleteTransactions(ids);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/transactions/shift-by-date", async (req, res) => {
+    try {
+      const { from_month, to_month, start_date, end_date, from_day, to_day, ids } = req.body;
+      const { shiftTransactionsByDate } = await import("./server/db.js");
+      const result = await shiftTransactionsByDate({
+        from_month,
+        to_month,
+        start_date,
+        end_date,
+        from_day: from_day ? parseInt(from_day, 10) : undefined,
+        to_day: to_day ? parseInt(to_day, 10) : undefined,
+        ids
+      });
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/transactions/duplicates/:month", async (req, res) => {
+    try {
+      const { month } = req.params;
+      const { getDuplicateCandidates } = await import("./server/db.js");
+      const duplicates = await getDuplicateCandidates(month);
+      res.json({ duplicates });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -222,10 +274,9 @@ async function startServer() {
   app.put("/api/transactions/:id/config", async (req, res) => {
     try {
       const { id } = req.params;
-      const { person_id, split_data, category_id, notes, is_fixed } = req.body;
       const { updateTransactionConfig } = await import("./server/db.js");
-      await updateTransactionConfig(id, person_id, split_data, category_id, notes, is_fixed ? 1 : 0);
-      res.json({ success: true });
+      const result = await updateTransactionConfig(id, req.body);
+      res.json({ success: true, ...result });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -426,8 +477,8 @@ async function startServer() {
       let fileText = "";
       if (req.file) {
         if (req.file.mimetype === "application/pdf") {
-          const pdfParse = (await import("pdf-parse")).default;
-          const pdfParserClass = (pdfParse as any).PDFParse;
+          const pdfParseModule = (await import("pdf-parse")) as any;
+          const pdfParserClass = pdfParseModule.default?.PDFParse || pdfParseModule.PDFParse;
           if (pdfParserClass) {
             const dataBuffer = fs.readFileSync(req.file.path);
             const parserInstance = new pdfParserClass({ data: dataBuffer });

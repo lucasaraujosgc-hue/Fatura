@@ -191,7 +191,13 @@ export default function App() {
           
           {/* Left Column - Dashboard */}
           <div className="lg:col-span-2 print:w-full">
-            <Dashboard currentMonth={currentMonth} peopleMap={peopleMap} categories={categories} />
+            <Dashboard 
+              currentMonth={currentMonth} 
+              peopleMap={peopleMap} 
+              categories={categories}
+              availableMonths={months}
+              onRefresh={triggerRefresh}
+            />
           </div>
 
           {/* Right Column - Controls */}
