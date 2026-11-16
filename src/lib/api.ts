@@ -148,13 +148,54 @@ export async function deleteCategory(id: string) {
   await fetch(`${API_BASE}/categories/${id}`, { method: "DELETE" });
 }
 
-export async function uploadInvoice(file: File, month: string, overwrite: boolean, resolutions?: Record<string, string>) {
+export interface InvoicePreviewCard {
+  card_final: string;
+  holder?: string;
+  count: number;
+  total: number;
+  person_id: string | null;
+}
+
+export interface InvoicePreview {
+  ok: boolean;
+  warnings: string[];
+  count: number;
+  parsedTotal: number;
+  printedTotal?: number;
+  suggestedMonth?: string;
+  nextClosingDate?: string;
+  mergedAdjustments: number;
+  monthHasImported: boolean;
+  cards: InvoicePreviewCard[];
+}
+
+export async function previewInvoice(file: File, month?: string): Promise<InvoicePreview> {
+  const formData = new FormData();
+  formData.append("pdf", file);
+  if (month) formData.append("invoiceMonth", month);
+
+  const res = await fetch(`${API_BASE}/upload/preview`, { method: "POST", body: formData });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Falha ao ler a fatura");
+  return data;
+}
+
+export async function uploadInvoice(
+  file: File,
+  month: string,
+  overwrite: boolean,
+  resolutions?: Record<string, string>,
+  cardPeople?: { card_final: string; person_id: string | null; holder?: string }[]
+) {
   const formData = new FormData();
   formData.append("pdf", file);
   formData.append("invoiceMonth", month);
   formData.append("overwrite", overwrite.toString());
   if (resolutions) {
     formData.append("resolutions", JSON.stringify(resolutions));
+  }
+  if (cardPeople) {
+    formData.append("cardPeople", JSON.stringify(cardPeople));
   }
 
   const res = await fetch(`${API_BASE}/upload`, {

@@ -71,6 +71,21 @@ export async function setupDb() {
     // Ignore if column already exists
   }
 
+  try {
+    await db.exec(`ALTER TABLE transactions ADD COLUMN card_final TEXT;`);
+  } catch (e) {
+    // Ignore if column already exists
+  }
+
+  // Cartão (4 últimos dígitos) -> pessoa responsável
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS card_people (
+      card_final TEXT PRIMARY KEY,
+      person_id TEXT,
+      holder TEXT
+    );
+  `);
+
   // Populate default categories if empty
   try {
     const countRow = await db.get("SELECT COUNT(*) as count FROM categories");
@@ -136,6 +151,7 @@ export async function updatePerson(id: string, name: string, color: string) {
 export async function deletePerson(id: string) {
   await db.run("DELETE FROM people WHERE id = ?", [id]);
   await db.run("UPDATE transactions SET person_id = NULL WHERE person_id = ?", [id]);
+  await db.run("UPDATE card_people SET person_id = NULL WHERE person_id = ?", [id]);
 }
 
 export async function getAvailableMonths() {
@@ -612,8 +628,8 @@ export async function importTransactions(month: string, extractedTx: any[], over
 
   const stmt = await db.prepare(`
     INSERT INTO transactions 
-    (id, billed_month, original_date, description, amount, current_installment, total_installment, is_imported, category_id, person_id, split_data, notes) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+    (id, billed_month, original_date, description, amount, current_installment, total_installment, is_imported, category_id, person_id, split_data, notes, card_final) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
   `);
 
   for (const tx of extractedTx) {
@@ -628,8 +644,24 @@ export async function importTransactions(month: string, extractedTx: any[], over
       tx.category_id || null,
       tx.person_id || null,
       tx.split_data || null,
-      tx.notes || null
+      tx.notes || null,
+      tx.card_final || null
     ]);
   }
   await stmt.finalize();
+}
+
+export async function getCardPeople(): Promise<{ card_final: string; person_id: string | null; holder: string | null }[]> {
+  return await db.all("SELECT * FROM card_people");
+}
+
+export async function setCardPeople(entries: { card_final: string; person_id: string | null; holder?: string | null }[]) {
+  for (const e of entries) {
+    if (!/^\d{4}$/.test(e.card_final || "")) continue;
+    await db.run(
+      `INSERT INTO card_people (card_final, person_id, holder) VALUES (?, ?, ?)
+       ON CONFLICT(card_final) DO UPDATE SET person_id = excluded.person_id, holder = COALESCE(excluded.holder, card_people.holder)`,
+      [e.card_final, e.person_id || null, e.holder || null]
+    );
+  }
 }

@@ -202,7 +202,7 @@ export default function App() {
 
           {/* Right Column - Controls */}
           <div className="space-y-6 print:hidden">
-            <UploadForm currentMonth={currentMonth} onUploadSuccess={triggerRefresh} />
+            <UploadForm currentMonth={currentMonth} peopleList={people} onUploadSuccess={triggerRefresh} />
             <CategoryChart currentMonth={currentMonth} categories={categories} refreshKey={refreshKey} />
             <ManualTransactionForm currentMonth={currentMonth} peopleList={people} categoriesList={categories} onSuccess={triggerRefresh} />
             <PeopleManager peopleList={people} onUpdate={triggerRefresh} />

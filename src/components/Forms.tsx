@@ -1,23 +1,27 @@
 import React, { useState } from "react";
-import { uploadInvoice, createTransaction, createPerson, deletePerson, createCategory, updateCategory, deleteCategory } from "../lib/api";
+import { uploadInvoice, previewInvoice, type InvoicePreview, createTransaction, createPerson, deletePerson, createCategory, updateCategory, deleteCategory } from "../lib/api";
 import { Upload, Plus, Trash2, Users, FileText, ChevronDown, ChevronUp } from "lucide-react";
 import { CategoryIcon, CATEGORY_ICONS } from "../lib/iconsList";
 
-export function UploadForm({ currentMonth, onUploadSuccess }: { currentMonth: string, onUploadSuccess: () => void }) {
+export function UploadForm({ currentMonth, peopleList = [], onUploadSuccess }: { currentMonth: string, peopleList?: any[], onUploadSuccess: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [reading, setReading] = useState(false);
   const [error, setError] = useState("");
   const [conflicts, setConflicts] = useState<any[]>([]);
   const [resolutions, setResolutions] = useState<Record<string, string>>({});
   const [lastOverwrite, setLastOverwrite] = useState(false);
   const [targetMonth, setTargetMonth] = useState(currentMonth);
+  const [preview, setPreview] = useState<InvoicePreview | null>(null);
+  const [cardPeople, setCardPeople] = useState<Record<string, string>>({});
+  const [overwrite, setOverwrite] = useState(true);
 
   React.useEffect(() => {
-    setTargetMonth(currentMonth);
+    if (!file) setTargetMonth(currentMonth);
   }, [currentMonth]);
 
   const generateMonths = () => {
-    const list = [];
+    const list: string[] = [];
     if (!currentMonth) return [];
     const [y, m] = currentMonth.split('-').map(Number);
     let currY = y, currM = m - 2;
@@ -28,6 +32,10 @@ export function UploadForm({ currentMonth, onUploadSuccess }: { currentMonth: st
       currM++;
       if (currM > 12) { currM = 1; currY++; }
     }
+    if (targetMonth && !list.includes(targetMonth)) {
+      list.push(targetMonth);
+      list.sort();
+    }
     return list;
   };
 
@@ -37,21 +45,47 @@ export function UploadForm({ currentMonth, onUploadSuccess }: { currentMonth: st
     return text.charAt(0).toUpperCase() + text.slice(1);
   };
 
-  const performUpload = async (overwrite: boolean, resData?: Record<string, string>) => {
+  const brl = (n: number | undefined) =>
+    (n ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+  // Lê o PDF assim que ele é escolhido (sem gravar nada) para mostrar a conferência.
+  const runPreview = async (f: File, month?: string) => {
+    setReading(true);
+    setError("");
+    try {
+      const p = await previewInvoice(f, month);
+      setPreview(p);
+      if (!month && p.suggestedMonth) setTargetMonth(p.suggestedMonth);
+      const initial: Record<string, string> = {};
+      p.cards.forEach(c => { if (c.person_id) initial[c.card_final] = c.person_id; });
+      setCardPeople(prev => ({ ...initial, ...prev }));
+    } catch (err: any) {
+      setPreview(null);
+      setError(err.message);
+    } finally {
+      setReading(false);
+    }
+  };
+
+  const performUpload = async (ow: boolean, resData?: Record<string, string>) => {
     if (!file) return;
     setLoading(true);
     setError("");
     try {
-      const resp = await uploadInvoice(file, targetMonth, overwrite, resData);
+      const cards = preview?.cards
+        .filter(c => c.card_final)
+        .map(c => ({ card_final: c.card_final, holder: c.holder, person_id: cardPeople[c.card_final] || null }));
+      const resp = await uploadInvoice(file, targetMonth, ow, resData, cards);
       if (resp.requireResolution) {
         setConflicts(resp.conflicts);
         const initialRes: Record<string, string> = {};
         resp.conflicts.forEach((c: any) => initialRes[c.conflictId] = 'ignore');
         setResolutions(initialRes);
-        setLastOverwrite(overwrite);
+        setLastOverwrite(ow);
       } else {
         onUploadSuccess();
         setFile(null);
+        setPreview(null);
         setConflicts([]);
         alert(`Fatura importada com sucesso para ${formatMonthText(targetMonth)}! (${resp.count} lançamentos.)`);
       }
@@ -64,14 +98,8 @@ export function UploadForm({ currentMonth, onUploadSuccess }: { currentMonth: st
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) return;
-
-    if (!confirm(`Deseja importar a fatura para o mês referencial ${formatMonthText(targetMonth)}?\nIsso processará o PDF usando IA e pode demorar alguns segundos.`)) {
-      return;
-    }
-
-    const overwrite = confirm("Deseja SOBRESCREVER dados anteriores importados desse mês? (Recomendado se você está atualizando a fatura deste mês)");
-    performUpload(overwrite);
+    if (!file || !preview?.ok) return;
+    performUpload(preview.monthHasImported ? overwrite : false);
   };
 
   const submitResolutions = () => {
@@ -87,11 +115,33 @@ export function UploadForm({ currentMonth, onUploadSuccess }: { currentMonth: st
       </h3>
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-slate-400 mb-1.5">Mês da Fatura</label>
+          <label className="block text-sm font-medium text-slate-400 mb-1.5">Arquivo PDF da Fatura</label>
+          <input 
+            type="file" 
+            accept="application/pdf"
+            onChange={e => {
+                const f = e.target.files?.[0] || null;
+                setFile(f);
+                setConflicts([]);
+                setPreview(null);
+                if (f) runPreview(f);
+            }}
+            className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-blue-500/10 file:text-blue-400 hover:file:bg-blue-500/20 border border-white/10 rounded-xl bg-white/5 cursor-pointer mb-3"
+            required
+          />
+          <label className="block text-sm font-medium text-slate-400 mb-1.5">
+            Mês da Fatura
+            {preview?.suggestedMonth && preview.suggestedMonth === targetMonth && (
+              <span className="ml-2 text-xs text-emerald-400 font-normal">sugerido pela fatura</span>
+            )}
+          </label>
           <select 
             value={targetMonth} 
-            onChange={e => setTargetMonth(e.target.value)} 
-            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-slate-100 outline-none focus:border-blue-500/60 transition-all duration-300 text-sm mb-3"
+            onChange={e => {
+              setTargetMonth(e.target.value);
+              if (file) runPreview(file, e.target.value);
+            }} 
+            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-slate-100 outline-none focus:border-blue-500/60 transition-all duration-300 text-sm"
           >
             {generateMonths().map(m => (
               <option key={m} value={m} className="bg-[#0b0d1b] text-slate-100 font-medium">
@@ -99,24 +149,70 @@ export function UploadForm({ currentMonth, onUploadSuccess }: { currentMonth: st
               </option>
             ))}
           </select>
-          <label className="block text-sm font-medium text-slate-400 mb-1.5">Arquivo PDF da Fatura</label>
-          <input 
-            type="file" 
-            accept="application/pdf"
-            onChange={e => {
-                setFile(e.target.files?.[0] || null);
-                setConflicts([]);
-            }}
-            className="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-blue-500/10 file:text-blue-400 hover:file:bg-blue-500/20 border border-white/10 rounded-xl bg-white/5 cursor-pointer"
-            required
-          />
         </div>
+
+        {reading && <p className="text-sm text-slate-400">Lendo a fatura...</p>}
+
+        {preview && !reading && (
+          <div className={`rounded-xl border p-3 text-sm space-y-3 ${preview.ok ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
+            <div>
+              <p className={`font-semibold ${preview.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                {preview.ok ? '✓ Confere com a fatura' : 'A leitura não confere com a fatura'}
+              </p>
+              <p className="text-slate-300 mt-0.5">
+                {preview.count} lançamentos • {brl(preview.parsedTotal)}
+                {preview.printedTotal !== undefined && <span className="text-slate-500"> (fatura: {brl(preview.printedTotal)})</span>}
+              </p>
+              {preview.mergedAdjustments > 0 && (
+                <p className="text-xs text-slate-500 mt-0.5">{preview.mergedAdjustments} ajustes de centavos somados às compras.</p>
+              )}
+              {!preview.ok && (
+                <ul className="list-disc pl-5 mt-1 text-xs text-red-300 space-y-0.5">
+                  {preview.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                </ul>
+              )}
+            </div>
+
+            {preview.ok && preview.cards.some(c => c.card_final) && (
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-wider font-bold text-slate-500">Cartões → pessoa</p>
+                {preview.cards.filter(c => c.card_final).map(c => (
+                  <div key={c.card_final} className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-slate-200 text-xs font-semibold truncate">{c.holder || 'Cartão'} • final {c.card_final}</p>
+                      <p className="text-slate-500 text-xs">{c.count} lanç. • {brl(c.total)}</p>
+                    </div>
+                    <select
+                      value={cardPeople[c.card_final] || ''}
+                      onChange={e => setCardPeople(prev => ({ ...prev, [c.card_final]: e.target.value }))}
+                      className="w-36 px-2 py-1.5 bg-white/5 border border-white/10 rounded-lg text-slate-100 text-xs outline-none"
+                    >
+                      <option value="" className="bg-[#0b0d1b]">Sem pessoa</option>
+                      {peopleList.map((p: any) => (
+                        <option key={p.id} value={p.id} className="bg-[#0b0d1b]">{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+                <p className="text-xs text-slate-500">A escolha fica salva para as próximas faturas.</p>
+              </div>
+            )}
+
+            {preview.ok && preview.monthHasImported && (
+              <label className="flex items-start gap-2 text-xs text-amber-300 cursor-pointer">
+                <input type="checkbox" checked={overwrite} onChange={e => setOverwrite(e.target.checked)} className="mt-0.5" />
+                <span>Este mês já tem uma fatura importada. Substituir pela nova (mantém categorias e divisões já feitas).</span>
+              </label>
+            )}
+          </div>
+        )}
+
         {error && <p className="text-sm text-red-400 font-medium">{error}</p>}
         <button 
-          disabled={!file || loading}
+          disabled={!file || loading || reading || !preview?.ok || (preview.monthHasImported && !overwrite)}
           className="w-full bg-blue-600 hover:bg-blue-500 text-white rounded-xl py-2.5 px-4 font-semibold shadow-lg shadow-blue-500/20 disabled:opacity-50 transition-all duration-300 active:scale-98 cursor-pointer"
         >
-          {loading ? "Processando e Importando..." : "Enviar PDF"}
+          {loading ? "Importando..." : preview?.ok ? `Importar ${preview.count} lançamentos` : "Importar"}
         </button>
       </div>
     </form>

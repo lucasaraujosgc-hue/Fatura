@@ -5,7 +5,7 @@ import multer from "multer";
 import cors from "cors";
 import fs from "fs";
 import { setupDb } from "./server/db.js";
-import { parseInvoicePDF } from "./server/parser.js";
+import { parseInvoicePDF, analyzeInvoicePDF } from "./server/parser.js";
 import {
   getPeople,
   createPerson,
@@ -282,6 +282,44 @@ async function startServer() {
     }
   });
 
+  // Prévia da fatura: lê o PDF, confere os totais e sugere o mês. Não grava nada.
+  app.post("/api/upload/preview", upload.single("pdf"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+      const { invoiceMonth } = req.body;
+      const report = await analyzeInvoicePDF(req.file.path, invoiceMonth || undefined);
+      const { getCardPeople, getTransactionsForMonth } = await import("./server/db.js");
+      const mapping = await getCardPeople();
+      const month = invoiceMonth || report.suggestedMonth;
+      const existing = month ? await getTransactionsForMonth(month) : [];
+
+      res.json({
+        ok: report.warnings.length === 0,
+        warnings: report.warnings,
+        count: report.transactions.length,
+        parsedTotal: report.parsedTotal,
+        printedTotal: report.printedTotal,
+        suggestedMonth: report.suggestedMonth,
+        nextClosingDate: report.nextClosingDate,
+        mergedAdjustments: report.mergedAdjustments,
+        monthHasImported: existing.some((t: any) => t.is_imported === 1),
+        cards: report.cards.map((c) => ({
+          ...c,
+          person_id: mapping.find((m) => m.card_final === c.card_final)?.person_id || null,
+        })),
+      });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    } finally {
+      if (req.file) {
+        try { fs.unlinkSync(req.file.path); } catch (e) {}
+      }
+    }
+  });
+
   // PDF Upload & Extraction
   app.post("/api/upload", upload.single("pdf"), async (req, res) => {
     try {
@@ -295,10 +333,23 @@ async function startServer() {
       }
 
       console.log(`Extracting data for month ${invoiceMonth}...`);
-      let extractedTransactions = await parseInvoicePDF(req.file.path, invoiceMonth);
+      let extractedTransactions: any[] = await parseInvoicePDF(req.file.path, invoiceMonth);
 
       // Check for conflicts
-      const { getTransactionsForMonth, deleteTransaction, importTransactions, getAllTransactions } = await import("./server/db.js");
+      const { getTransactionsForMonth, deleteTransaction, importTransactions, getAllTransactions, getCardPeople, setCardPeople } = await import("./server/db.js");
+
+      // Cartão -> pessoa: salva o que veio da tela e carrega o mapeamento completo
+      if (req.body.cardPeople) {
+        try {
+          await setCardPeople(JSON.parse(req.body.cardPeople));
+        } catch (e) {
+          console.warn("cardPeople inválido:", e);
+        }
+      }
+      const cardPerson: Record<string, string> = {};
+      for (const m of await getCardPeople()) {
+        if (m.person_id) cardPerson[m.card_final] = m.person_id;
+      }
       const existingTxs = await getTransactionsForMonth(invoiceMonth);
 
       // Fetch all transactions to learn historical category/person associations
@@ -352,6 +403,13 @@ async function startServer() {
             extTx.person_id = learned.person_id;
             extTx.split_data = learned.split_data;
             extTx.notes = learned.notes;
+        }
+
+        // 1b. O cartão define a pessoa (mais confiável que a descrição, que se repete
+        // entre pessoas, ex.: "MERCADOLIVRE*MERCA"). Divisões já configuradas são mantidas.
+        const cardOwner = extTx.card_final ? cardPerson[extTx.card_final] : undefined;
+        if (cardOwner && !extTx.split_data) {
+            extTx.person_id = cardOwner;
         }
 
         // 2. Overwrite from exactly matching previous imported transaction in SAME month (takes precedence if they tweaked the split on this specific month)
@@ -422,7 +480,7 @@ async function startServer() {
                      extTx.split_data = conflict.split_data;
                      extTx.notes = conflict.notes;
                      extTx.current_installment = conflict.current_installment;
-                     extTx.total_installment = conflict.total_installment;
+                     extTx.total_installments = conflict.total_installment;
                      txsToImport.push(extTx);
                  } else {
                      // skip manual conflict

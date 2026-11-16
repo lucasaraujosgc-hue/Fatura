@@ -147,14 +147,51 @@ function splitInstallment(desc: string) {
   return { description: desc.trim(), current: 1, total: 1 };
 }
 
+export interface CardSummary {
+  card_final: string;
+  holder?: string;
+  count: number;
+  total: number;
+}
+
 export interface ParseReport {
   transactions: ParsedTransaction[];
   warnings: string[];
   printedTotal?: number;
   parsedTotal: number;
+  cards: CardSummary[];
+  /** "Previsão do próximo fechamento" impressa na fatura (YYYY-MM-DD). */
+  nextClosingDate?: string;
+  /** Mês sugerido para a fatura (YYYY-MM), a partir do próximo fechamento. */
+  suggestedMonth?: string;
+  /** Quantos estornos de centavos foram somados à compra correspondente. */
+  mergedAdjustments: number;
 }
 
-export function parseItauLines(lines: string[], invoiceMonth: string): ParseReport {
+/** Lê a "Previsão do próximo fechamento" e sugere o mês desta fatura (um mês antes). */
+export function detectInvoiceMonth(lines: string[]): { nextClosingDate?: string; suggestedMonth?: string } {
+  for (const l of lines) {
+    const m = l.match(/próximo fechamento:?\s*(\d{2})\/(\d{2})\/(\d{4})/i);
+    if (m) {
+      let y = Number(m[3]);
+      let mo = Number(m[2]) - 1;
+      if (mo < 1) { mo = 12; y--; }
+      return {
+        nextClosingDate: `${m[3]}-${m[2]}-${m[1]}`,
+        suggestedMonth: `${y}-${String(mo).padStart(2, "0")}`,
+      };
+    }
+  }
+  return {};
+}
+
+export function parseItauLines(lines: string[], invoiceMonth?: string): ParseReport {
+  const detected = detectInvoiceMonth(lines);
+  const month = invoiceMonth || detected.suggestedMonth;
+  if (!month) {
+    throw new Error("Informe o mês da fatura: não foi possível detectá-lo no PDF.");
+  }
+
   type Section = "none" | "payments" | "current" | "future" | "other";
   let section: Section = "none";
   let holder: string | undefined;
@@ -163,6 +200,7 @@ export function parseItauLines(lines: string[], invoiceMonth: string): ParseRepo
 
   const transactions: ParsedTransaction[] = [];
   const warnings: string[] = [];
+  const cards: CardSummary[] = [];
   let printedTotal: number | undefined;
 
   for (const raw of lines) {
@@ -215,7 +253,7 @@ export function parseItauLines(lines: string[], invoiceMonth: string): ParseRepo
       const amount = toNumber(value);
       cardSum = Math.round((cardSum + amount) * 100) / 100;
       transactions.push({
-        date: inferDate(dd, mm, invoiceMonth),
+        date: inferDate(dd, mm, month),
         description: inst.description,
         amount,
         current_installment: inst.current,
@@ -227,22 +265,86 @@ export function parseItauLines(lines: string[], invoiceMonth: string): ParseRepo
     // linhas sem data (cidade, "DATA ESTABELECIMENTO...") são ignoradas
   }
 
-  const parsedTotal = Math.round(transactions.reduce((s, t) => s + t.amount, 0) * 100) / 100;
-  if (printedTotal !== undefined && Math.abs(printedTotal - parsedTotal) > 0.009) {
+  const parsedTotal = round2(transactions.reduce((s, t) => s + t.amount, 0));
+  if (printedTotal === undefined) {
+    warnings.push("Não encontrei o \"Total dos lançamentos atuais\" no PDF. O arquivo está completo?");
+  } else if (Math.abs(printedTotal - parsedTotal) > 0.009) {
     warnings.push(`Total lido R$ ${parsedTotal.toFixed(2)} diferente do total da fatura R$ ${printedTotal.toFixed(2)}.`);
   }
-  if (transactions.length === 0) warnings.push("Nenhum lançamento encontrado pelo parser.");
-  return { transactions, warnings, printedTotal, parsedTotal };
+  if (transactions.length === 0) warnings.push("Nenhum lançamento encontrado. Este parser lê faturas do Itaú.");
+
+  // Os totais já foram conferidos; agora juntamos os estornos de centavos.
+  const merged = mergeRoundingAdjustments(transactions);
+
+  for (const t of merged.transactions) {
+    const key = t.card_final || "";
+    let c = cards.find((x) => x.card_final === key);
+    if (!c) { c = { card_final: key, holder: t.holder, count: 0, total: 0 }; cards.push(c); }
+    c.count++;
+    c.total = round2(c.total + t.amount);
+  }
+
+  return {
+    transactions: merged.transactions,
+    warnings,
+    printedTotal,
+    parsedTotal,
+    cards,
+    ...detected,
+    mergedAdjustments: merged.merged,
+  };
+}
+
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
+const normDesc = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/**
+ * O Itaú lança ajustes de arredondamento de compras parceladas como linhas
+ * negativas de centavos (ex.: "VIVARA XFS - 0,20" logo abaixo de "VIVARA XFS 02/06 101,70").
+ * Somamos esse ajuste à compra de mesma data e mesmo estabelecimento, para não poluir a lista.
+ */
+export function mergeRoundingAdjustments(txs: ParsedTransaction[]) {
+  const out: ParsedTransaction[] = [];
+  let merged = 0;
+  for (const t of txs) {
+    if (t.amount < 0 && t.amount > -1) {
+      const key = normDesc(t.description);
+      let target: ParsedTransaction | undefined;
+      for (let i = out.length - 1; i >= 0; i--) {
+        const o = out[i];
+        if (o.date !== t.date || o.card_final !== t.card_final || o.amount <= 0) continue;
+        const ok = normDesc(o.description);
+        const n = Math.min(ok.length, key.length, 12);
+        if (n >= 4 && ok.slice(0, n) === key.slice(0, n)) { target = o; break; }
+      }
+      if (target) {
+        target.amount = round2(target.amount + t.amount);
+        merged++;
+        continue;
+      }
+    }
+    out.push({ ...t });
+  }
+  return { transactions: out, merged };
 }
 
 // ---------------------------------------------------------------------------
-// 3. Função usada pelo servidor (mesma assinatura de antes)
+// 3. Funções usadas pelo servidor
 // ---------------------------------------------------------------------------
 
-export async function parseInvoicePDF(filePath: string, invoiceMonth: string): Promise<ParsedTransaction[]> {
+/** Lê o PDF e devolve tudo o que foi encontrado, inclusive avisos. Não lança erro se a conferência falhar. */
+export async function analyzeInvoicePDF(filePath: string, invoiceMonth?: string): Promise<ParseReport> {
   const buffer = fs.readFileSync(filePath);
   const lines = await extractLayoutLines(buffer);
-  const report = parseItauLines(lines, invoiceMonth);
+  return parseItauLines(lines, invoiceMonth);
+}
+
+/** Lê o PDF e só devolve os lançamentos se tudo conferir com os totais da fatura. */
+export async function parseInvoicePDF(filePath: string, invoiceMonth: string): Promise<ParsedTransaction[]> {
+  const report = await analyzeInvoicePDF(filePath, invoiceMonth);
 
   if (report.warnings.length === 0) {
     console.log(`[parser] ${report.transactions.length} lançamentos, total R$ ${report.parsedTotal.toFixed(2)} (conferido com a fatura).`);
